@@ -30,6 +30,7 @@ MANIFEST
 notebooks/resumes.json
 qdrant_storage
 .python-version
+notebooks/resumes
 
 #  PyInstaller
 #  Usually these files are written by a python script from a template
