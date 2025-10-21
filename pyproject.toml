@@ -11,6 +11,7 @@ dependencies = [
     "langchain>=0.3.27",
     "langchain-community>=0.3.31",
     "lxml>=6.0.2",
+    "numpy==2.2",
     "qdrant-client>=1.15.1",
     "rapidfuzz>=3.14.1",
     "sentence-transformers>=5.1.1",

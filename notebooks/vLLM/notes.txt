@@ -1,0 +1,17 @@
+vLLM - native vs hf:
+    1. vLLM also supports model implementations that are available in Transformers. You should expect the performance of a Transformers model implementation used in vLLM to be within <5% of the performance of a dedicated vLLM model implementation. We call this feature the "Transformers backend".
+    2. https://docs.vllm.ai/en/latest/models/supported_models.html#vllm
+
+Compatibility charts:
+    https://docs.vllm.ai/en/latest/features/index.html#compatibility-matrix
+
+Custom Models:
+    If a model is neither supported natively by vLLM nor Transformers, it can still be used in vLLM!
+
+    For a model to be compatible with the Transformers backend for vLLM it must:
+
+        be a Transformers compatible custom model (see Transformers - https://huggingface.co/docs/transformers/en/custom_models):
+            The model directory must have the correct structure (e.g. config.json is present).
+            config.json must contain auto_map.AutoModel.
+        be a Transformers backend for vLLM compatible model (see Writing custom models[next section]):
+            Customisation should be done in the base model (e.g. in MyModel, not MyModelForCausalLM).

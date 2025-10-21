@@ -31,6 +31,8 @@ notebooks/resumes.json
 qdrant_storage
 .python-version
 notebooks/resumes
+models
+llama-3.1-8b
 
 #  PyInstaller
 #  Usually these files are written by a python script from a template

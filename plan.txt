@@ -1,0 +1,152 @@
+Perfect! Let’s summarize everything into a **concise task list** and set **performance/compute expectations** for your **LLaMA 8B-Instruct** deployment on a single RTX 3090 (24 GB). I’ll keep this focused on **inference + FastAPI microservice** for production-like behavior, JSON outputs, async requests, and optional quantization.
+
+---
+
+# ** Tasks / Implementation Steps**
+
+### **A. Environment Setup**
+
+* Ensure CUDA 11.x / 12.x + NVIDIA drivers + cuDNN installed.
+* Create Python environment (`venv` or `conda`) with:
+
+  * `vllm`
+  * `fastapi`, `uvicorn[standard]`
+  * `httpx`
+  * `pydantic` v2
+  * `prometheus-fastapi-instrumentator`
+* Optional: `gradio` or `streamlit` for testing UI.
+
+---
+
+### **B. Model Preparation**
+
+* Place your fine-tuned LLaMA 8B-Instruct model in `/models/resume_llama8b/`.
+* Optional: produce **quantized version** (AWQ / GPTQ INT4/INT8) for faster inference.
+* Validate model outputs with a small test set to ensure JSON schema is respected.
+
+---
+
+### **C. vLLM Deployment**
+
+* Start single vLLM instance on GPU:
+
+```bash
+python -m vllm.entrypoints.openai.api_server \
+  --model /models/resume_llama8b \
+  --port 8000 \
+  --max-num-batched-tokens 4096 \
+  --max-num-seqs 32 \
+  --host 0.0.0.0
+```
+
+* Monitor VRAM usage (`nvidia-smi`) to ensure the model fits.
+* Tune `max-num-batched-tokens` / `max-num-seqs` for latency vs throughput.
+
+---
+
+### **D. FastAPI Gateway**
+
+* Define Pydantic schemas for **request & response JSON**.
+* Implement `/generate_resume` endpoint:
+
+  * Validate input JSON.
+  * Compose prompt with job description + user resume + RAG results.
+  * Call vLLM asynchronously via `httpx.AsyncClient`.
+  * Validate LLM output with Pydantic before returning.
+* Add structured logging for requests, duration, and model version.
+* Optional: integrate Prometheus metrics for latency, RPS, GPU utilization.
+
+---
+
+### **E. Observability & Logging**
+
+* Log structured JSON per request:
+
+  * Prompt length, token count, durations (total/vLLM), model version.
+* Metrics:
+
+  * p50/p95/p99 latency
+  * Requests per second
+  * Tokens generated per second
+  * GPU utilization
+* Prometheus endpoint `/metrics` exposed by API.
+
+---
+
+### **F. Batching / Concurrency**
+
+* Default: rely on **vLLM internal batching** for GPU token efficiency.
+* Optional: implement **gateway-level coalescing** if many small prompts are expected.
+* Use async calls and `httpx.AsyncClient` with connection pooling.
+
+---
+
+### **G. Quantization & Fallback**
+
+* Test AWQ / GPTQ models. Compare:
+
+  * Token/sec throughput
+  * JSON output quality
+* Keep full FP16 model as fallback in case quantized model fails validation.
+
+---
+
+### **H. Testing & Benchmarking**
+
+* Sanity test with `curl` / Postman.
+* Load test with `wrk` or `locust`.
+* Monitor GPU memory and utilization.
+* Measure latency (p50/p95/p99), RPS, tokens/sec.
+
+---
+
+### **I. Multi-instance / Cloud Readiness**
+
+* Future plan:
+
+  * Deploy multiple vLLM instances on Azure / cloud GPUs.
+  * Use load balancer / FastAPI gateway for request routing.
+  * Versioned model deployment with canary rollout.
+
+---
+
+# ** Performance & Compute Expectations (RTX 3090, 24 GB, LLaMA 8B-Instruct)**
+
+| Metric                                             | FP16                   | AWQ INT4             |
+| -------------------------------------------------- | ---------------------- | -------------------- |
+| Tokens/sec                                         | 90–120 tok/s           | 150–200 tok/s        |
+| Latency (400–500 token response)                   | p50: 3–4 s, p95: 5–6 s | p50: 2–3 s, p95: 4 s |
+| Requests/sec (RPS, 500 tokens per response)        | ~0.2–0.25              | ~0.35–0.4            |
+| Max concurrent requests before tail latency spikes | 4–6                    | 6–8                  |
+| GPU utilization (saturated)                        | 85–95%                 | 90–100%              |
+| VRAM usage                                         | ~22 GB                 | ~16–18 GB            |
+
+**Notes:**
+
+* LLaMA 8B fits in **FP16** but leaves little room for large prompts; quantization helps with VRAM headroom and speed.
+* Throughput scales with concurrency + vLLM batching; single instance is sufficient for a prototype on 3090.
+* Input prompt length directly impacts latency and VRAM usage; keep resume + job + retrieved examples < ~2k tokens for safety.
+
+---
+
+# Summary
+
+1. **Setup environment** → Python + CUDA + dependencies.
+2. **Prepare model** → FP16 / quantized, validate JSON output.
+3. **Start vLLM server** → single-GPU, tune batch size / token limits.
+4. **FastAPI gateway** → async calls, JSON validation, logging, Prometheus metrics.
+5. **Observe & test** → monitor GPU, latency, throughput, adjust vLLM parameters.
+6. **Optional quantization / multi-instance plan** → scale later on cloud GPUs.
+
+**Expectations for LLaMA 8B-Instruct on 3090:**
+
+* p50 latency ~3 s (FP16), ~2 s (INT4)
+* RPS ~0.25–0.4 (per instance)
+* Tokens/sec ~90–200 depending on precision and batching
+* VRAM usage 16–22 GB depending on FP16/INT4 and prompt size
+
+---
+
+If you want, I can **draw a clean diagram of the FastAPI + vLLM + optional multi-instance setup** showing request flow, batching, and JSON output — this helps visualize the production deployment clearly.
+
+Do you want me to do that next?
