@@ -1,0 +1,32 @@
+# Base image
+FROM python:3.11-slim
+
+# Set environment variables
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+ENV ZENML_STORE_URL=postgresql+psycopg2://zenml:zenml@sql:5432/zenml_metadata
+ENV ZENML_DEFAULT_STACK=default
+
+# Set working directory
+WORKDIR /zenml
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    git \
+    curl \
+    build-essential \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install ZenML with local extra and database clients
+RUN pip install --upgrade pip
+RUN pip install "zenml[local]==0.91.0" psycopg2-binary qdrant-client
+
+# Copy entrypoint script
+COPY entrypoint.sh /zenml/entrypoint.sh
+RUN chmod +x /zenml/entrypoint.sh
+
+# Expose ZenML server port
+EXPOSE 8080
+
+# Set entrypoint
+ENTRYPOINT ["/zenml/entrypoint.sh"]

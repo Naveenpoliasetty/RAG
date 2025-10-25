@@ -1,0 +1,63 @@
+{
+  "name": "ZenML MLOps Environment",
+  "dockerComposeFile": "docker-compose.yml",
+  "service": "zenml-dev",
+  "workspaceFolder": "/workspace",
+  
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-python.python",
+        "ms-python.vscode-pylance",
+        "ms-toolsai.jupyter",
+        "ms-azuretools.vscode-docker"
+      ],
+      "settings": {
+        "python.defaultInterpreterPath": "/usr/local/bin/python",
+        "python.linting.enabled": true,
+        "python.linting.pylintEnabled": true,
+        "python.formatting.provider": "black"
+      }
+    }
+  },
+
+  "forwardPorts": [
+    8080,  // ZenML Server
+    5432,  // PostgreSQL
+    6333,  // Qdrant REST API
+    6334   // Qdrant gRPC API
+  ],
+
+  "portsAttributes": {
+    "8080": {
+      "label": "ZenML Server",
+      "onAutoForward": "notify"
+    },
+    "5432": {
+      "label": "PostgreSQL",
+      "onAutoForward": "silent"
+    },
+    "6333": {
+      "label": "Qdrant REST API",
+      "onAutoForward": "notify"
+    },
+    "6334": {
+      "label": "Qdrant gRPC",
+      "onAutoForward": "silent"
+    }
+  },
+
+  "postCreateCommand": "pip install --upgrade pip && pip install -r requirements.txt || true",
+  
+  "postStartCommand": "bash .devcontainer/startup.sh",
+
+  "features": {
+    "ghcr.io/devcontainers/features/docker-in-docker:2": {
+      "moby": false
+    },
+    "ghcr.io/devcontainers/features/git:1": {}
+  },
+
+  "remoteUser": "vscode"
+}
+

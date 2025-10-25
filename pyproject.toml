@@ -12,7 +12,11 @@ dependencies = [
     "langchain-community>=0.3.31",
     "lxml>=6.0.2",
     "numpy==2.2",
+    "pyyaml>=6.0.3",
     "qdrant-client>=1.15.1",
     "rapidfuzz>=3.14.1",
     "sentence-transformers>=5.1.1",
+    "sqlalchemy-utils>=0.42.0",
+    "tqdm>=4.67.1",
+    "zenml[server]>=0.90.0",
 ]

@@ -27,10 +27,9 @@ share/python-wheels/
 MANIFEST
 
 # Project fragements
-notebooks/resumes.json
 qdrant_storage
 .python-version
-notebooks/resumes
+notebooks
 models
 llama-3.1-8b
 
@@ -213,3 +212,37 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+*.ipynb
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# ZenML
+.zen/
+zenml_local_store/
+
+# Environment variables
+.env
+.env.local
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Docker
+docker-compose.override.yml
+
+# Logs
+*.log
+logs/
+
+# Database
+*.db
+*.sqlite3
