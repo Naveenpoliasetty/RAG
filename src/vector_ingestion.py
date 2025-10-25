@@ -81,3 +81,4 @@ def run_ingestion(qdrant, model, resume_folder="resumes"):
                 logging.warning(f"Failed final upsert for {collection}: {e}")
 
     logging.info("Batched resume ingestion completed")
+    logging.info("Done")
