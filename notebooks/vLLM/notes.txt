@@ -20,10 +20,105 @@ Custom Models:
 extras:
     python -m vllm.entrypoints.openai.api_server     --model unsloth/Meta-Llama-3.1-8B-Instruct-bnb-4bit     --port 8000     --max-model-len 4096     --gpu-memory-utilization 0.85     --max-num-seqs 2     --max-num-batched-tokens 8192
 
+###############################################################
 
 what is this about, what needs are being fulfilled
+    1. nginx:
+        - reverse proxy and load balancer
+        - forwards http requests to fastapi
+        - decrypts https and passes them as http reqs to fastapi
+        - rate limiting
+    2. fastapi:
+        - handle api reqs and manage api related logic
+        - forwards prompts to the vllm service
+        - api key authentication
+        - rate limiting
+        - exposes api metrics for tools like prometheus
+    3. vllm:
+        - hosts llms
+        - manages llm resources 
+
 why this?
-edge cases and system breakdown senarios
+    1. nginx:
+        - known for high performance and is widely used
+        - highly supported
+    2. fastapi:
+        - fast
+        - easy and is async supported
+    3. vllm:
+        - built to be scalable and fast
+        - high serving efficiency
+        
+alternatives:
+    1. nginx: apache-http-server, HAProxy
+    2. fastapi: flask, django, FastCGI
+    3. vllm: hf-inference-api, tfserving, torchserve
 
 gaurdrails - deeplearning.ai
 grafane, prometheus -> llm monitoring
+
+
+# -------- Networking & Security --------
+--host                   # Server host (e.g., 0.0.0.0 for Docker)
+--port                   # Port number (default: 8000)
+--ssl-keyfile            # SSL key file path
+--ssl-certfile           # SSL certificate file path
+--ssl-ca-certs           # CA certificates file path
+--enable-ssl-refresh     # Automatically refresh SSL certs if changed
+--api-key                # Require API key for requests
+--allow-credentials      # Allow credentials (CORS)
+--allowed-origins        # Allowed origins (CORS)
+--allowed-methods        # Allowed HTTP methods (CORS)
+--allowed-headers        # Allowed HTTP headers (CORS)
+
+# -------- Model & Hardware --------
+--model                  # Hugging Face model path or name
+--revision               # Model revision (branch, tag, commit)
+--code-revision          # Model code revision
+--tokenizer-revision     # Tokenizer revision
+--load-format            # Format for model weights (e.g., safetensors, gguf)
+--dtype                  # Model precision (float16, bfloat16, float32)
+--device                 # Target device (cuda, cpu, auto)
+--gpu-memory-utilization # Fraction of GPU memory per instance
+--cpu-offload-gb         # CPU offload per GPU (in GB)
+--max-model-len          # Context length
+
+# -------- Performance / Parallelism --------
+--pipeline-parallel-size # Pipeline parallel stages
+--tensor-parallel-size   # Tensor parallel replicas
+--data-parallel-size     # Data parallel replicas
+--enable-expert-parallel # Expert parallel for MoE models
+--max-parallel-loading-workers # Avoid OOM when loading large models
+--block-size             # Token block size (affects memory & throughput)
+--enable-prefix-caching  # Cache repeated prompts
+--disable-sliding-window # Optional memory optimization
+--scheduler-delay-factor # Delay factor for scheduling requests
+--max-num-batched-tokens # Max tokens per batch
+--multi-step-stream-outputs # Stream outputs incrementally
+
+# -------- Quantization / Memory --------
+--quantization           # Weight quantization method (awq, bitsandbytes, gptq, etc.)
+--rope-scaling           # RoPE scaling (JSON)
+--rope-theta             # RoPE theta
+--swap-space             # CPU swap space per GPU (GiB)
+--max-cpu-loras          # Max LoRAs stored in CPU memory
+--fully-sharded-loras    # Fully shard LoRA layers
+
+# -------- API / Logging --------
+--enable-request-id-headers # Add request IDs for tracing
+--disable-log-stats         # Reduce logging overhead
+--disable-log-requests      # Disable request logging
+--max-log-len               # Max prompt chars to log
+--disable-fastapi-docs       # Disable Swagger/OpenAPI UI
+--enable-server-load-tracking # Track server load & metrics
+
+# -------- Optional / Advanced --------
+--enable-lora               # Enable LoRA adapters
+--enable-lora-bias          # Enable LoRA bias
+--enable-prompt-adapter     # Enable PromptAdapters
+--max-new-tokens            # Global max tokens for generation
+--generation-config         # Path to generation config
+--override-generation-config # JSON overrides for generation
+--speculative-config        # Speculative decoding JSON
+--enable-auto-tool-choice   # Auto tool usage
+--tool-call-parser          # Tool parser for auto-tool
