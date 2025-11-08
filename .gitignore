@@ -27,12 +27,15 @@ share/python-wheels/
 MANIFEST
 
 # Project fragements
-notebooks/resumes.json
+/notebooks
 qdrant_storage
 .python-version
-notebooks/resumes
+/data
+/src/data_acquisition/rsumes.json
 models
+/src/logs
 llama-3.1-8b
+
 
 #  PyInstaller
 #  Usually these files are written by a python script from a template
