@@ -1,0 +1,42 @@
+# Systemd service file for Resume API
+# Copy this file to /etc/systemd/system/resume-api.service
+# 
+# Installation:
+#   sudo cp resume-api.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable resume-api
+#   sudo systemctl start resume-api
+#
+# Usage:
+#   sudo systemctl status resume-api
+#   sudo systemctl restart resume-api
+#   sudo systemctl stop resume-api
+
+[Unit]
+Description=Resume Parser API with Qdrant
+Requires=docker.service
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+WorkingDirectory=/home/YOUR_USERNAME/RAG
+ExecStart=/usr/bin/docker compose -f docker-compose.prod.yml up -d
+ExecStop=/usr/bin/docker compose -f docker-compose.prod.yml down
+TimeoutStartSec=0
+
+# Restart policy
+Restart=on-failure
+RestartSec=10s
+
+# User and group
+User=YOUR_USERNAME
+Group=YOUR_USERNAME
+
+# Environment
+Environment="PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+
+[Install]
+WantedBy=multi-user.target
+

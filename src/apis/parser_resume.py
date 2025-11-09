@@ -167,6 +167,28 @@ def parse_resume(file_path):
     return resume_data
 
 
+@app.get("/")
+async def root():
+    """Root endpoint"""
+    return {
+        "message": "Resume Parser API",
+        "version": "1.0.0",
+        "endpoints": {
+            "health": "/health",
+            "docs": "/docs",
+            "parse_resume": "/parse_resume"
+        }
+    }
+
+@app.get("/health")
+async def health_check():
+    """Health check endpoint for monitoring"""
+    return {
+        "status": "healthy",
+        "service": "resume-parser-api",
+        "timestamp": timeit.default_timer()
+    }
+
 @app.post("/parse_resume")
 async def parse_resume_endpoint(file: UploadFile = File(...)):
     os.makedirs("uploads", exist_ok=True)
