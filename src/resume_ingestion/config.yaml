@@ -1,0 +1,53 @@
+# Application Configuration
+app:
+  name: "resume_ingestion_service"
+  log_level: "INFO"
+  max_workers: 4
+
+# MongoDB Configuration
+mongodb:
+  uri: "mongodb+srv://naveenpoliasetty:Naveen221003@cluster0.8jniohl.mongodb.net/?appName=Cluster0"
+  database: "resumes_db"
+  collection: "resumes"
+  timeout_ms: 30000
+  batch_size: 50
+
+# Qdrant Configuration
+qdrant:
+  host: "localhost"
+  port: 6333
+  timeout: 30
+  # Add API key if needed (for cloud version)
+  # api_key: "your-api-key"
+
+# Embeddings Configuration
+embeddings:
+  model: "intfloat/e5-base-v2"
+  batch_size: 16
+  device: "cpu"  # or "cuda"
+  chunk_size: 1000
+  chunk_overlap: 150
+
+# Processing Configuration
+processing:
+  batch_size: 50
+  poll_interval: 10.0
+  retry_limit: 5
+  reset_after_minutes: 30
+
+# Collections Mapping
+collections:
+  professional_summary: "professional_summaries"
+  technical_skills: "technical_skills"    # ✅ Fixed spelling
+  experiences: "experiences"              # ✅ Fixed to plural
+
+# Retry Configuration
+retry:
+  max_delay: 300  # 5 minutes in seconds
+  base_delay: 5
+  backoff_factor: 3
+
+# Docker specific settings
+docker:
+  mongodb_service: "resume_mongodb"
+  qdrant_service: "resume_qdrant"

@@ -3,7 +3,7 @@ name = "rag"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = ">=3.11"
 dependencies = [
     "bs4>=0.0.2",
     "docx2txt>=0.9",
@@ -32,4 +32,8 @@ dependencies = [
     "spacy>=3.8.7",
     "zenml==0.91.0",
     "fastapi>=0.121.0",
+    "python-multipart>=0.0.20",
+    "uvicorn>=0.38.0",
+    "bson>=0.5.10",
+    "pymongo>=4.15.3",
 ]

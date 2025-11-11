@@ -55,7 +55,7 @@ def extract_job_role(soup):
 
 def extract_post_body_safe(
     url: str,
-    target_class: Optional[str] = None,
+    target_class = "single-post-body",
     class_regex: Optional[str] = None,
     allow_fallback: bool = True,
     debug: bool = False,
