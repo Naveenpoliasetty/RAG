@@ -92,7 +92,8 @@ def doc_to_text(file_path):
     text = docx2txt.process(file_path)
     return text
 
-RESUME_TEXT = doc_to_text("/Users/naveenpoliasetty/Downloads/RAG-1/resumes/Nithish V_Oracle consultant.docx")
+# Removed hardcoded test file path - this was causing startup failure
+# RESUME_TEXT = doc_to_text("/Users/naveenpoliasetty/Downloads/RAG-1/resumes/Nithish V_Oracle consultant.docx")
 
 def get_response(resume_text: str):
     start_time = timeit.default_timer()

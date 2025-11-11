@@ -1,0 +1,26 @@
+# Minimal requirements for FastAPI Resume Parser
+# Core API
+fastapi>=0.115.0
+uvicorn[standard]>=0.32.0
+python-multipart>=0.0.9
+
+# OpenAI & AI
+openai>=1.54.0
+instructor>=1.6.4
+
+# Data validation
+pydantic>=2.9.0
+pydantic-extra-types>=2.10.0
+email-validator>=2.2.0
+phonenumbers>=8.13.0
+
+# Document processing
+python-docx>=1.1.0
+docx2txt>=0.8
+
+# Environment & utilities
+python-dotenv>=1.0.0
+
+# Optional: Qdrant client (if using vector DB)
+qdrant-client>=1.12.0
+
