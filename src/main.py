@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from src.apis.routes import parser_resume, get_unique_job_roles
+from src.api import parser_resume, get_unique_job_roles
 from src.core.config import settings
 
 app = FastAPI(

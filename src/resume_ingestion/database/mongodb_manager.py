@@ -1,12 +1,12 @@
-import logging
 from datetime import datetime, timezone, timedelta
 from typing import Optional, List, Dict, Any
 from pymongo import MongoClient, ReturnDocument
 from pymongo.errors import PyMongoError
 from bson import ObjectId
 from src.core.settings import config
+from src.utils.logger import get_logger
 
-logger = logging.getLogger("ReliableBatchWorker")
+logger = get_logger("ReliableBatchWorker")
 
 class MongoDBManager:
     def __init__(self):

@@ -1,5 +1,6 @@
 from typing import Dict, Any
-
+from src.utils.logger import get_logger
+logger = get_logger("Parser")
 
 def parse_resume(json_data: Dict[str, Any]) -> Dict[str, Any]:
     resume = {

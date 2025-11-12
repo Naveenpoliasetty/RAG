@@ -4,7 +4,6 @@ Main entry point for MongoDB to Qdrant ingestion pipeline.
 Run with: python main.py --mode continuous --batch-size 50
 """
 
-import logging
 import argparse
 import sys
 import time
@@ -353,7 +352,7 @@ def main():
     
     # Set logging level
     if args.verbose:
-        logging.getLogger().setLevel(logging.DEBUG)
+        logger.getLogger().setLevel(logger.DEBUG)
         logger.debug("Verbose logging enabled")
     
     # Create pipeline instance

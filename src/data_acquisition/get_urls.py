@@ -7,7 +7,6 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 import requests
 from bs4 import BeautifulSoup
 from pathlib import Path
-import logging
 from src.utils.logger import get_logger
 logger = get_logger("GetUrls")
 

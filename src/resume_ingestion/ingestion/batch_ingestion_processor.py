@@ -1,4 +1,3 @@
-import logging
 import time
 from typing import Dict, Any
 from bson import ObjectId

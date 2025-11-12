@@ -1,9 +1,8 @@
 # test_embeddings.py
-import logging
 from resume_ingestion.vector_store.embeddings import EmbeddingService
 from resume_ingestion.database.mongodb_manager import MongoDBManager
-
-logging.basicConfig(level=logging.DEBUG)
+from src.utils.logger import get_logger
+logger = get_logger("TestEmbeddings")
 
 def test_embeddings():
     print("🧪 Testing Embedding Service...")
