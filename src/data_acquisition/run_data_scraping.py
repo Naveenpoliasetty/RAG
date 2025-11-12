@@ -7,46 +7,37 @@ import json
 from uuid import uuid4
 
 # Import pipeline modules
-from get_urls import get_urls, extract_category_from_url
-from scrape import extract_post_body_safe
-from validate_structure import validate_structured_resume
-from parser import parse_resume
+from .get_urls import get_urls, extract_category_from_url
+from .scrape import extract_post_body_safe
+from .validate_structure import validate_structured_resume
+from .parser import parse_resume
 
 # Import MongoDB Manager
 from resume_ingestion.database.mongodb_manager import MongoDBManager
 
+from src.utils.logger import get_logger
+logger = get_logger("RunDataScraping")
+
 # -----------------------------------------------------------------------------
 # LOGGING SETUP
 # -----------------------------------------------------------------------------
-LOG_DIR = Path("logs")
+global base_path
+base_path = Path(__file__).resolve().parents[2]
+LOG_DIR = base_path / "logs"
 LOG_DIR.mkdir(exist_ok=True)
 log_file = LOG_DIR / "scrape_pipeline.log"
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s | %(levelname)-8s | %(name)s | %(message)s",
-    handlers=[
-        logging.FileHandler(log_file, mode='w', encoding='utf-8'),
-        logging.StreamHandler(sys.stdout)
-    ]
-)
-logger = logging.getLogger("scrape_pipeline")
+    
 
 
 # -----------------------------------------------------------------------------
 # PIPELINE FUNCTIONS
 # -----------------------------------------------------------------------------
 class ScrapePipeline:
-    def __init__(self, batch_size: int = 50, output_dir: str = "output"):
+    def __init__(self, batch_size: int = 50, output_dir: str = base_path / "output"):
         self.batch_size = batch_size
-        self.output_dir = Path(output_dir)
-        self.output_dir.mkdir(exist_ok=True)
         
         self.mongo_manager = MongoDBManager()
-        
-        # Files for local saving
-        self.json_output_file = self.output_dir / "resumes.json"
-        self.failed_urls_file = self.output_dir / "failed_urls.json"
         
     def scrape_single_resume(self, url: str):
         """Scrape -> Validate -> Parse one resume end-to-end."""
@@ -100,73 +91,49 @@ class ScrapePipeline:
                 exp.pop("environment", None)
         return resume
 
-    def save_to_mongodb(self, resumes: list) -> int:
+    def save_to_mongodb(self, resumes: list, collection_name: str = "resumes") -> int:
         """Save resumes to MongoDB and return count of successfully inserted documents."""
         if not resumes:
-            logger.warning("No resumes to save to MongoDB")
+            logger.warning(f"No resumes to save to MongoDB collection: {collection_name}")
             return 0
         
         try:
-            # Insert resumes into MongoDB collection
-            result = self.mongo_manager.collection.insert_many(resumes)
+            # Use different collection based on the type
+            if collection_name == "failed_resumes":
+                collection = self.mongo_manager.db[collection_name]
+                result = collection.insert_many(resumes)
+            else:
+                result = self.mongo_manager.collection.insert_many(resumes)
+                
             inserted_count = len(result.inserted_ids)
             
-            logger.info(f"Saved {inserted_count} resumes to MongoDB")
+            logger.info(f"Saved {inserted_count} resumes to MongoDB collection: {collection_name}")
             return inserted_count
             
         except Exception as e:
             logger.error(f"Failed to save resumes to MongoDB: {e}")
             return 0
 
-    def save_to_json_local(self, resumes: list, mode: str = "append"):
-        """Save resumes to local JSON file for cross-verification."""
-        if not resumes:
-            return
-        
-        try:
-            data = []
-            
-            # Read existing data if appending
-            if mode == "append" and self.json_output_file.exists():
-                with open(self.json_output_file, 'r', encoding='utf-8') as f:
-                    data = json.load(f)
-            
-            # Add new resumes
-            data.extend(resumes)
-            
-            # Write back to file
-            with open(self.json_output_file, 'w', encoding='utf-8') as f:
-                json.dump(data, f, indent=2, ensure_ascii=False, default=str)
-            
-            logger.info(f"Saved {len(resumes)} resumes to local JSON: {self.json_output_file}")
-            
-        except Exception as e:
-            logger.error(f"Error saving to local JSON: {e}")
-
-    def save_failed_urls(self, failed_entries: list):
-        """Save failed URLs to a separate JSON file for debugging."""
+    def save_failed_resumes_to_mongodb(self, failed_entries: list) -> int:
+        """Save failed resume processing attempts to MongoDB failed_resumes collection."""
         if not failed_entries:
-            return
+            return 0
         
-        try:
-            data = []
-            
-            # Read existing failed URLs if appending
-            if self.failed_urls_file.exists():
-                with open(self.failed_urls_file, 'r', encoding='utf-8') as f:
-                    data = json.load(f)
-            
-            # Add new failed entries
-            data.extend(failed_entries)
-            
-            # Write back to file
-            with open(self.failed_urls_file, 'w', encoding='utf-8') as f:
-                json.dump(data, f, indent=2, ensure_ascii=False, default=str)
-            
-            logger.info(f"📁 Saved {len(failed_entries)} failed URLs to: {self.failed_urls_file}")
-            
-        except Exception as e:
-            logger.error(f"Error saving failed URLs: {e}")
+        failed_resumes_for_db = []
+        
+        for entry in failed_entries:
+            # Create a structured failed resume document
+            failed_resume = {
+                "_id": str(uuid4()),
+                "source_url": entry["url"],
+                "error_type": entry["status"],
+                "error_message": entry["error"],
+                "failed_at": datetime.now(timezone.utc),
+                "retry_count": 0
+            }
+            failed_resumes_for_db.append(failed_resume)
+        
+        return self.save_to_mongodb(failed_resumes_for_db, "failed_resumes")
 
     def check_existing_urls(self, urls: list) -> list:
         """Check which URLs already exist in MongoDB to avoid duplicates."""
@@ -191,8 +158,8 @@ class ScrapePipeline:
             return urls  # Fallback: process all URLs
 
     def run_pipeline(self, urls: list = None, skip_existing: bool = True) -> dict:
-        """Run the complete scraping pipeline with dual saving."""
-        logger.info("Starting scraping pipeline with dual saving (MongoDB + Local JSON)")
+        """Run the complete scraping pipeline with MongoDB storage only."""
+        logger.info("Starting scraping pipeline with MongoDB storage only")
         
         # Initialize MongoDB connection
         if not self.mongo_manager.health_check():
@@ -224,8 +191,8 @@ class ScrapePipeline:
         # --- Step 2–4: Scrape + Validate + Parse ---
         successful_resumes = []  # Current batch for MongoDB
         failed_entries = []
-        all_successful_resumes = []  # All successful resumes for JSON
         saved_to_mongo_count = 0     # Track actual MongoDB saves
+        saved_failed_to_mongo_count = 0  # Track failed resumes saved to MongoDB
         
         # Reset counters for this run
         processed_count = 0
@@ -246,7 +213,6 @@ class ScrapePipeline:
                     
                     if result["status"] == "success":
                         successful_resumes.append(result["resume"])
-                        all_successful_resumes.append(result["resume"])
                         success_count += 1
                     else:
                         failed_entries.append(result)
@@ -270,18 +236,12 @@ class ScrapePipeline:
             final_batch_saved = self.save_to_mongodb(successful_resumes)
             saved_to_mongo_count += final_batch_saved
 
-        # Save ALL successful resumes to JSON ONCE at the end
-        if all_successful_resumes:
-            self.save_to_json_local(all_successful_resumes, mode="append")
-
-        # --- Step 6: Save failed URLs for debugging ---
+        # --- Step 6: Save failed resumes to MongoDB ---
         if failed_entries:
-            self.save_failed_urls(failed_entries)
+            saved_failed_to_mongo_count = self.save_failed_resumes_to_mongodb(failed_entries)
+            logger.info(f"Saved {saved_failed_to_mongo_count} failed resumes to MongoDB failed_resumes collection")
 
-        # --- Step 7: Create a summary file ---
-        self.save_summary_report(len(urls), saved_to_mongo_count, len(failed_entries))
-
-        # --- Step 8: Return statistics ---
+        # --- Step 7: Return statistics ---
         stats = {
             "success": True,
             "total_urls": len(urls),
@@ -289,68 +249,12 @@ class ScrapePipeline:
             "successful": success_count,
             "failed": failed_count,
             "saved_to_mongodb": saved_to_mongo_count,  # Use actual MongoDB count
-            "saved_to_json": len(all_successful_resumes),  # Use actual JSON count
-            "json_output_file": str(self.json_output_file),
-            "failed_urls_file": str(self.failed_urls_file),
+            "saved_failed_to_mongodb": saved_failed_to_mongo_count,  # Failed resumes in MongoDB
             "timestamp": datetime.now(timezone.utc).isoformat()
         }
         
         logger.info(f"Pipeline complete! Statistics: {stats}")
         return stats
-
-    def save_summary_report(self, total_urls: int, saved_count: int, failed_count: int):
-        """Save a summary report of the scraping session."""
-        summary = {
-            "session_timestamp": datetime.now(timezone.utc).isoformat(),
-            "total_urls_processed": total_urls,
-            "successfully_saved": saved_count,
-            "failed_urls": failed_count,
-            "success_rate": f"{(saved_count/total_urls)*100:.1f}%" if total_urls > 0 else "0%",
-            "output_files": {
-                "successful_resumes": str(self.json_output_file),
-                "failed_urls": str(self.failed_urls_file),
-                "log_file": "logs/scrape_pipeline.log"
-            },
-            "next_steps": [
-                "Check failed_urls.json for URLs that need manual review",
-                "Use main.py --mode single to process individual batches for Qdrant",
-                "Verify data in MongoDB using your database client"
-            ]
-        }
-        
-        summary_file = self.output_dir / "scraping_session_summary.json"
-        with open(summary_file, 'w', encoding='utf-8') as f:
-            json.dump(summary, f, indent=2, ensure_ascii=False, default=str)
-        
-        logger.info(f"Session summary saved to: {summary_file}")
-
-    def compare_mongo_json(self) -> dict:
-        """Compare MongoDB records with local JSON for verification."""
-        try:
-            # Count in MongoDB
-            mongo_count = self.mongo_manager.collection.count_documents({})
-            
-            # Count in local JSON
-            json_count = 0
-            if self.json_output_file.exists():
-                with open(self.json_output_file, 'r', encoding='utf-8') as f:
-                    json_data = json.load(f)
-                    json_count = len(json_data)
-            
-            comparison = {
-                "mongodb_count": mongo_count,
-                "json_count": json_count,
-                "match": mongo_count == json_count,
-                "difference": mongo_count - json_count,
-                "comparison_timestamp": datetime.now(timezone.utc).isoformat()
-            }
-            
-            logger.info(f"Data comparison: MongoDB={mongo_count}, JSON={json_count}, Match={comparison['match']}")
-            return comparison
-            
-        except Exception as e:
-            logger.error(f"Error comparing MongoDB and JSON data: {e}")
-            return {"error": str(e)}
 
     def close(self):
         """Close MongoDB connection."""
@@ -362,35 +266,25 @@ class ScrapePipeline:
 
 
 def main():
-    """Main function with dual saving and verification."""
+    """Main function with MongoDB storage only."""
     pipeline = ScrapePipeline(batch_size=20)
     
     try:
         # Run the complete pipeline
         result = pipeline.run_pipeline()
         
-        # Compare data for verification
-        comparison = pipeline.compare_mongo_json()
-        
         # Log comprehensive summary
         logger.info("\n" + "="*60)
-        logger.info("SCRAPING PIPELINE SUMMARY - DUAL SAVING")
+        logger.info("SCRAPING PIPELINE SUMMARY - MONGODB ONLY")
         logger.info("="*60)
         
         if result["success"]:
             logger.info(f"Success: {result['successful']} resumes")
             logger.info(f"Failed:  {result['failed']} URLs")
-            logger.info(f"MongoDB: {result['saved_to_mongodb']} saved")
-            logger.info(f"Local:   {result['saved_to_json']} saved to JSON")
+            logger.info(f"MongoDB: {result['saved_to_mongodb']} successful resumes saved to 'resumes' collection")
+            logger.info(f"MongoDB: {result['saved_failed_to_mongodb']} failed resumes saved to 'failed_resumes' collection")
             logger.info(f"Total:   {result['total_urls']} URLs processed")
-            logger.info("\nDATA VERIFICATION:")
-            logger.info(f"   MongoDB count: {comparison['mongodb_count']}")
-            logger.info(f"   JSON count:    {comparison['json_count']}")
-            logger.info(f"   Data match:    {'YES' if comparison['match'] else 'NO'}")
-            logger.info(f"\n Output files:")
-            logger.info(f"   Successful: {result['json_output_file']}")
-            logger.info(f"   Failed URLs: {result['failed_urls_file']}")
-            logger.info(f"   Session summary: output/scraping_session_summary.json")
+            logger.info(f"\nAll data stored in MongoDB - no local files created")
         else:
             logger.error(f"Pipeline failed: {result.get('error', 'Unknown error')}")
             

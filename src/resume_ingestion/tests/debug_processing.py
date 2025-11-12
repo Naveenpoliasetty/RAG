@@ -32,7 +32,7 @@ def debug_single_document():
             print(f"   ❌ {section}: EMPTY")
     
     # Test embedding generation
-    print(f"\n🧪 Testing embedding generation...")
+    print("\n🧪 Testing embedding generation...")
     points = qdrant.prepare_points_for_resume(doc)
     
     total_points = 0

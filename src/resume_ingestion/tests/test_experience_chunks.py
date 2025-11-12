@@ -30,7 +30,7 @@ def test_experience_chunks():
                 print(f"     Text preview: {payload.get('text', '')[:100]}...")
     
     if points:
-        print(f"\nUpserting to vector store...")
+        print("\nUpserting to vector store...")
         qdrant.upsert_to_qdrant(points)
         
         # Check what got stored

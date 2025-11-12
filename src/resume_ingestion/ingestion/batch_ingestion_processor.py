@@ -4,8 +4,9 @@ from typing import Dict, Any
 from bson import ObjectId
 from resume_ingestion.vector_store.qdrant_manager import QdrantManager
 from resume_ingestion.database.mongodb_manager import MongoDBManager
+from src.utils.logger import get_logger
 
-logger = logging.getLogger("BatchIngestionProcessor")
+logger = get_logger("BatchIngestionProcessor")
 
 class BatchIngestionProcessor:
     """

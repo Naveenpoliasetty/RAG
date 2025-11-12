@@ -15,19 +15,10 @@ from resume_ingestion.database.mongodb_manager import MongoDBManager
 from resume_ingestion.ingestion.batch_ingestion_processor import BatchIngestionProcessor
 from resume_ingestion.vector_store.embeddings import EmbeddingService
 from resume_ingestion.vector_store.qdrant_manager import QdrantManager
+from src.utils.logger import get_logger
 
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.StreamHandler(sys.stdout),
-        logging.FileHandler('ingestion_pipeline.log')
-    ]
-)
-
-logger = logging.getLogger("IngestionPipeline")
+logger = get_logger("IngestionPipeline")
 
 class IngestionPipeline:
     """

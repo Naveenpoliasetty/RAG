@@ -4,7 +4,7 @@ from typing import Optional, List, Dict, Any
 from pymongo import MongoClient, ReturnDocument
 from pymongo.errors import PyMongoError
 from bson import ObjectId
-from resume_ingestion.config.settings import config
+from src.core.settings import config
 
 logger = logging.getLogger("ReliableBatchWorker")
 

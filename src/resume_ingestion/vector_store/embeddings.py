@@ -1,11 +1,11 @@
-import logging
 from sentence_transformers import SentenceTransformer
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from resume_ingestion.config.settings import config
 from typing import List, Optional
 from resume_ingestion.vector_store.qdrant_manager import needs_splitter
+from src.utils.logger import get_logger
 
-logger = logging.getLogger("ReliableBatchWorker")
+logger = get_logger("ReliableBatchWorker")
 
 class EmbeddingService:
     def __init__(self, model_name: Optional[str] = None, chunk_size: int = 1000, chunk_overlap: int = 150):

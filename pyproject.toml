@@ -37,3 +37,10 @@ dependencies = [
     "bson>=0.5.10",
     "pymongo>=4.15.3",
 ]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[build-system]
+requires = ["setuptools", "wheel"]
+build-backend = "setuptools.build_meta"

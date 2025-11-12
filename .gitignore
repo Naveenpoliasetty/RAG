@@ -32,6 +32,9 @@ qdrant_storage
 .python-version
 /data
 /src/data_acquisition/rsumes.json
+/src/logs
+/src/data_acquisition/output
+src/output
 models
 /src/logs
 llama-3.1-8b

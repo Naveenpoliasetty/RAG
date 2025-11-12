@@ -17,7 +17,7 @@ def debug_processing_detailed():
     # Get one pending document
     doc = mongo.collection.find_one({"qdrant_status": "pending"})
     if not doc:
-        print("❌ No pending documents found")
+        print("No pending documents found")
         return
     
     doc_id = doc.get('_id', 'Unknown')
@@ -27,7 +27,7 @@ def debug_processing_detailed():
     print(f"   Source URL: {doc.get('source_url')}")
     
     # Detailed content analysis
-    print(f"\n📊 CONTENT ANALYSIS:")
+    print("\nCONTENT ANALYSIS:")
     
     # Professional Summary
     prof_summary = doc.get('professional_summary')
@@ -40,12 +40,12 @@ def debug_processing_detailed():
                 else:
                     print(f"      [{i}] INVALID TYPE: {type(item)}")
         elif isinstance(prof_summary, str):
-            print(f"   ✅ Professional Summary: string ({len(prof_summary)} chars)")
-            print(f"      Preview: {prof_summary[:100]}...")
+            print(f"Professional Summary: string ({len(prof_summary)} chars)")
+            print(f"Preview: {prof_summary[:100]}...")
         else:
-            print(f"   ❌ Professional Summary: UNEXPECTED TYPE: {type(prof_summary)}")
+            print(f"Professional Summary: UNEXPECTED TYPE: {type(prof_summary)}")
     else:
-        print(f"   ❌ Professional Summary: EMPTY")
+        print("Professional Summary: EMPTY")
     
     # Technical Skills
     tech_skills = doc.get('technical_skills')
@@ -58,13 +58,13 @@ def debug_processing_detailed():
                 else:
                     print(f"      [{i}] INVALID TYPE: {type(skill)}")
         else:
-            print(f"   ❌ Technical Skills: UNEXPECTED TYPE: {type(tech_skills)}")
+            print(f"Technical Skills: UNEXPECTED TYPE: {type(tech_skills)}")
     else:
-        print(f"   ❌ Technical Skills: EMPTY")
+        print("Technical Skills: EMPTY")
     
     # Experiences
     experiences = doc.get('experiences', [])
-    print(f"   ✅ Experiences: {len(experiences)} items")
+    print(f"   Experiences: {len(experiences)} items")
     for i, exp in enumerate(experiences[:2]):  # Show first 2 experiences
         print(f"      Experience {i}:")
         print(f"        Job Role: {exp.get('job_role', 'N/A')}")
@@ -77,19 +77,19 @@ def debug_processing_detailed():
             else:
                 print(f"          [{j}] INVALID: {type(resp)}")
     
-    print(f"\n🧪 TESTING EMBEDDING GENERATION...")
+    print("\nESTING EMBEDDING GENERATION...")
     
     # Test the prepare_points_for_resume method step by step
     try:
         points = qdrant.prepare_points_for_resume(doc)
-        print(f"✅ prepare_points_for_resume completed")
+        print("prepare_points_for_resume completed")
     except Exception as e:
-        print(f"❌ prepare_points_for_resume FAILED: {e}")
+        print(f"prepare_points_for_resume FAILED: {e}")
         return
     
     # Analyze the generated points
     total_points = 0
-    print(f"\n📊 POINTS GENERATION RESULTS:")
+    print("\nPOINTS GENERATION RESULTS:")
     
     for collection_name, collection_points in points.items():
         print(f"   {collection_name}: {len(collection_points)} points")
@@ -98,8 +98,8 @@ def debug_processing_detailed():
         # Show details of first point if available
         if collection_points:
             first_point = collection_points[0]
-            print(f"      First point details:")
-            print(f"        ID: {first_point.get('id')}")
+            print("      First point details:")
+            print("        ID: {first_point.get('id')}")
             vector = first_point.get('vector', [])
             print(f"        Vector: {len(vector)} dimensions")
             payload = first_point.get('payload', {})
@@ -109,37 +109,37 @@ def debug_processing_detailed():
             print(f"        Text length: {len(text)} chars")
             print(f"        Text preview: {text[:80]}...")
         else:
-            print(f"      No points generated for this collection")
+            print("      No points generated for this collection")
     
-    print(f"\n📈 SUMMARY: {total_points} total points generated")
+    print(f"\nSUMMARY: {total_points} total points generated")
     
     if total_points > 0:
-        print(f"\n🚀 TESTING QDRANT UPSERT...")
+        print("\n TESTING QDRANT UPSERT...")
         try:
             qdrant.upsert_to_qdrant(points)
-            print(f"✅ Upsert completed successfully!")
+            print(" Upsert completed successfully!")
             
             # Update document status
             mongo.collection.update_one(
                 {"_id": doc["_id"]},
                 {"$set": {"qdrant_status": "completed"}}
             )
-            print(f"✅ Document marked as completed")
+            print("✅ Document marked as completed")
             
         except Exception as e:
             print(f"❌ Upsert FAILED: {e}")
     else:
-        print(f"❌ No points were generated - this is the problem!")
+        print("❌ No points were generated - this is the problem!")
         
         # Let's test embedding generation manually
-        print(f"\n🔧 MANUAL EMBEDDING TEST:")
+        print("\nMANUAL EMBEDDING TEST:")
         test_text = "This is a test sentence for embedding generation"
         try:
             vectors = qdrant.embedding_service.encode_texts([test_text])
             if vectors and len(vectors) > 0:
                 print(f"✅ Manual embedding test PASSED: {len(vectors[0])} dimensions")
             else:
-                print(f"❌ Manual embedding test FAILED: No vectors returned")
+                print("Manual embedding test FAILED: No vectors returned")
         except Exception as e:
             print(f"❌ Manual embedding test FAILED: {e}")
 

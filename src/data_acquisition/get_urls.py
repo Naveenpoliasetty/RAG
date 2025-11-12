@@ -7,7 +7,9 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 import requests
 from bs4 import BeautifulSoup
 from pathlib import Path
-
+import logging
+from src.utils.logger import get_logger
+logger = get_logger("GetUrls")
 
 def extract_category_from_url(url: str) -> str:
     """
@@ -46,8 +48,9 @@ def extract_category_from_url(url: str) -> str:
 # --- Load configuration ---
 def load_config():
     # Get the directory where this script is located
-    script_dir = Path(__file__).resolve().parent
-    config_path = script_dir / "scrape_config.yaml"
+    script_dir = Path(__file__).resolve().parents[1]
+    logger.info(f"Script directory: {script_dir}")
+    config_path = script_dir / "core" / "scrape_config.yaml"
     
     if not config_path.exists():
         raise FileNotFoundError(f"Config file not found at: {config_path}")

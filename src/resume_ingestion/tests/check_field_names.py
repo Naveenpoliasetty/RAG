@@ -19,7 +19,7 @@ def check_field_names():
     
     # Check what collections mapping expects
     from resume_ingestion.config.settings import config
-    print(f"\n🔧 COLLECTIONS MAPPING IN CONFIG:")
+    print("\n COLLECTIONS MAPPING IN CONFIG:")
     if hasattr(config, 'collections'):
         for key, value in config.collections.items():
             print(f"   {key} -> {value}")

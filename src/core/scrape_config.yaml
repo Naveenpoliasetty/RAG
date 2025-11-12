@@ -6,6 +6,8 @@ scraper:
   # Maximum number of pages to scrape per category
   max_pages: 2
 
+  batch_size: 20
+
   # Delay (seconds) between consecutive requests
   request_delay:
     min: 0.3

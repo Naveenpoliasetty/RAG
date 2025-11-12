@@ -1,15 +1,10 @@
 # debug_pipeline.py
-import logging
 import sys
 from pymongo import MongoClient
-
+from src.utils.logger import get_logger
+logger = get_logger("DebugPipeline")
 # Configure logging to see ALL output
-logging.basicConfig(
-    level=logging.DEBUG,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[logging.StreamHandler(sys.stdout)]
-)
-logger = logging.getLogger("DebugPipeline")
+
 
 def test_basic_connectivity():
     logger.info("🔧 Testing basic connectivity...")
@@ -30,14 +25,13 @@ def test_basic_connectivity():
     
     # Test if we can import the modules
     try:
-        from resume_ingestion.database.mongodb_manager import MongoDBManager
         logger.info("✅ MongoDBManager import successful")
     except ImportError as e:
         logger.error(f"❌ MongoDBManager import failed: {e}")
         return False
         
     try:
-        from resume_ingestion.vector_store.qdrant_manager import QdrantManager
+        from resume_ingestion.vector_store.qdrant_manager import QdrantManager #type: ignore
         logger.info("✅ QdrantManager import successful")
     except ImportError as e:
         logger.error(f"❌ QdrantManager import failed: {e}")

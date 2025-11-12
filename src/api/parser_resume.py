@@ -7,14 +7,15 @@ from dotenv import load_dotenv
 import docx2txt
 import os
 import json
-import logging
-from fastapi import FastAPI, File, UploadFile #type: ignore
+from src.utils.logger import get_logger
+from fastapi import APIRouter, File, UploadFile #type: ignore
 from fastapi.responses import JSONResponse #type: ignore
 import timeit
+import pdfplumber
 
 load_dotenv() 
-
-app = FastAPI()
+logger = get_logger("ParserResume")
+router = APIRouter()
 
 SYSTEM_PROMPT = """
 You are a professional resume parser.
@@ -89,11 +90,31 @@ class Resume(BaseModel):
     experiences: List[Experience]
 
 def doc_to_text(file_path):
-    text = docx2txt.process(file_path)
+    """
+    Convert document to text. Supports both .docx and .pdf files.
+    
+    Args:
+        file_path: Path to the document file (.docx or .pdf)
+    
+    Returns:
+        Extracted text from the document
+    """
+    file_ext = os.path.splitext(file_path)[1].lower()
+    
+    if file_ext == '.docx':
+        text = docx2txt.process(file_path)
+    elif file_ext == '.pdf':
+        text = ""
+        with pdfplumber.open(file_path) as pdf:
+            for page in pdf.pages:
+                page_text = page.extract_text()
+                if page_text:
+                    text += page_text + "\n"
+    else:
+        raise ValueError(f"Unsupported file format: {file_ext}. Only .docx and .pdf are supported.")
+    
     return text
 
-# Removed hardcoded test file path - this was causing startup failure
-# RESUME_TEXT = doc_to_text("/Users/naveenpoliasetty/Downloads/RAG-1/resumes/Nithish V_Oracle consultant.docx")
 
 def get_response(resume_text: str):
     start_time = timeit.default_timer()
@@ -107,7 +128,7 @@ def get_response(resume_text: str):
         ],
     )
     end_time = timeit.default_timer()
-    logging.info(f"Time taken: {end_time - start_time} seconds")
+    logger.info(f"Time taken: {end_time - start_time} seconds")
     return resume_data.model_dump_json(indent=2)
 
 # Define a function to validate an LLM response
@@ -168,29 +189,7 @@ def parse_resume(file_path):
     return resume_data
 
 
-@app.get("/")
-async def root():
-    """Root endpoint"""
-    return {
-        "message": "Resume Parser API",
-        "version": "1.0.0",
-        "endpoints": {
-            "health": "/health",
-            "docs": "/docs",
-            "parse_resume": "/parse_resume"
-        }
-    }
-
-@app.get("/health")
-async def health_check():
-    """Health check endpoint for monitoring"""
-    return {
-        "status": "healthy",
-        "service": "resume-parser-api",
-        "timestamp": timeit.default_timer()
-    }
-
-@app.post("/parse_resume")
+@router.post("/parse_resume")
 async def parse_resume_endpoint(file: UploadFile = File(...)):
     os.makedirs("uploads", exist_ok=True)
     file_path = f"uploads/{file.filename}"
@@ -202,14 +201,4 @@ async def parse_resume_endpoint(file: UploadFile = File(...)):
     except Exception as e:
         return JSONResponse(content={"error": str(e)}, status_code=500)
 
-if __name__ == "__main__":
-    load_dotenv()
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-        datefmt="%Y-%m-%d %H:%M:%S",
-        handlers=[logging.FileHandler("parser_resume.log"), logging.StreamHandler()],
-    )
-    logger = logging.getLogger("parser_resume")
-    file_path = "/Users/naveenpoliasetty/Downloads/RAG-1/resumes/Nithish V_Oracle consultant.docx"
-    resume_data = parse_resume(file_path)
+

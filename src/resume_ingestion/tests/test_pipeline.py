@@ -3,21 +3,16 @@
 Test script to verify the complete pipeline with Docker services.
 """
 
-import logging
 import time
-from pathlib import Path
 
 from resume_ingestion.database.mongodb_manager import MongoDBManager
 from resume_ingestion.vector_store.qdrant_manager import QdrantManager
 from resume_ingestion.vector_store.embeddings import EmbeddingService
 from resume_ingestion.ingestion.batch_ingestion_processor import BatchIngestionProcessor
-
+from src.utils.logger import get_logger
+logger = get_logger("PipelineTest")
 # Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
-logger = logging.getLogger("PipelineTest")
+
 
 def test_mongodb_connection():
     """Test MongoDB connection and basic operations."""

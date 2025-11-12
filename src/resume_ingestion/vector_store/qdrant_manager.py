@@ -7,8 +7,9 @@ from qdrant_client import QdrantClient
 from qdrant_client.http import models as qmodels
 from qdrant_client.http.exceptions import UnexpectedResponse, ApiException
 from resume_ingestion.config.settings import config
+from src.utils.logger import get_logger
 
-logger = logging.getLogger("QdrantManager")
+logger = get_logger("QdrantManager")
 
 
 class QdrantError(Exception):

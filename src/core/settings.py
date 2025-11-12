@@ -2,12 +2,13 @@ import os
 import yaml
 from pathlib import Path
 from typing import Dict, Any, Optional
-
+from src.utils.logger import get_logger
+logger = get_logger("Config")
 class Config:
     def __init__(self, config_path: Optional[str] = 'config.yaml'):
-        self.base_path = Path(__file__).parent.parent
-        print(self.base_path)
-        self.config_path = self.base_path / config_path
+        self.base_path = Path(__file__).resolve().parents[2]
+        logger.info(f"Base path to find the config file: {self.base_path}")
+        self.config_path = self.base_path /"src" / "core" / config_path
         self._config = self._load_config()
         self._override_with_env_vars()
     
@@ -15,6 +16,7 @@ class Config:
         """Load configuration from YAML file."""
         try:
             with open(self.config_path, 'r') as file:
+                logger.info(f"Loading config file: {self.config_path}")
                 return yaml.safe_load(file)
         except FileNotFoundError:
             raise Exception(f"Configuration file not found: {self.config_path}")

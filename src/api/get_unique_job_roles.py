@@ -3,7 +3,8 @@ from pymongo import MongoClient
 from typing import List, Dict
 import re
 from fastapi import APIRouter, HTTPException, Depends #type: ignore
-
+from src.utils.logger import get_logger
+logger = get_logger("GetUniqueJobRoles")
 
 router = APIRouter()
 def normalize_job_role(role: str) -> str:
