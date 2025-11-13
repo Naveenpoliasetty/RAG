@@ -1,6 +1,6 @@
 from sentence_transformers import SentenceTransformer
 from langchain.text_splitter import RecursiveCharacterTextSplitter
-from resume_ingestion.config.settings import config
+from src.core.settings import config
 from typing import List, Optional
 from resume_ingestion.vector_store.qdrant_manager import needs_splitter
 from src.utils.logger import get_logger

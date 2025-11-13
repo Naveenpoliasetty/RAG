@@ -4,7 +4,8 @@ import time, random #noqa
 from bs4 import BeautifulSoup
 import requests
 from pydantic import BaseModel
-
+from src.utils.logger import get_logger
+logger = get_logger("Scrape")
 
 class Experience(BaseModel):
     job_role: str

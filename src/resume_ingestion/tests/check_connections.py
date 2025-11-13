@@ -11,7 +11,7 @@ from datetime import datetime
 try:
     from resume_ingestion.database.mongodb_manager import MongoDBManager
     from resume_ingestion.vector_store.qdrant_manager import QdrantManager
-    from resume_ingestion.config.settings import config
+    from src.core.settings import config
 except ImportError as e:
     print(f"❌ Import error: {e}")
     print("Make sure you're running from the project root and dependencies are installed.")

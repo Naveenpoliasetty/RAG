@@ -10,10 +10,10 @@ import time
 from typing import Dict, Any, Optional
 
 # Import our components
-from resume_ingestion.database.mongodb_manager import MongoDBManager
-from resume_ingestion.ingestion.batch_ingestion_processor import BatchIngestionProcessor
-from resume_ingestion.vector_store.embeddings import EmbeddingService
-from resume_ingestion.vector_store.qdrant_manager import QdrantManager
+from .database.mongodb_manager import MongoDBManager
+from .ingestion.batch_ingestion_processor import BatchIngestionProcessor
+from .vector_store.embeddings import EmbeddingService
+from .vector_store.qdrant_manager import QdrantManager
 from src.utils.logger import get_logger
 
 

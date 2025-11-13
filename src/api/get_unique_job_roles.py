@@ -1,4 +1,4 @@
-from resume_ingestion.config.settings import config
+from src.core.settings import config
 from pymongo import MongoClient
 from typing import List, Dict
 import re

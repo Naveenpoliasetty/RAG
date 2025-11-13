@@ -5,7 +5,7 @@ from typing import List, Dict, Any, Optional
 from qdrant_client import QdrantClient
 from qdrant_client.http import models as qmodels
 from qdrant_client.http.exceptions import UnexpectedResponse, ApiException
-from src.core.config.settings import config
+from src.core.settings import config
 from src.utils.logger import get_logger
 
 logger = get_logger("QdrantManager")
