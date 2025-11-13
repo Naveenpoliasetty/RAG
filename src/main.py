@@ -27,3 +27,7 @@ app.include_router(parser_resume.router, prefix="/api/v1", tags=["Parser Resume"
 @app.get("/")
 async def root():
     return {"message": "Resume API Service"}
+
+@app.get("/health")
+async def health():
+    return {"status": "healthy", "service": "Resume API"}
