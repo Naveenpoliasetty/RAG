@@ -34,7 +34,6 @@ dependencies = [
     "fastapi>=0.121.0",
     "python-multipart>=0.0.20",
     "uvicorn>=0.38.0",
-    "bson>=0.5.10",
     "pymongo>=4.15.3",
 ]
 
