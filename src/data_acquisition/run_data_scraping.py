@@ -13,7 +13,7 @@ from .parser import parse_resume
 from resume_ingestion.database.mongodb_manager import MongoDBManager
 
 from src.utils.logger import get_pipeline_logger
-logger = get_pipeline_logger(__name__, "RunDataScraping", date_format="%Y-%m-%d")
+logger = get_pipeline_logger(__name__, "RunDataScraping")
 
 # -----------------------------------------------------------------------------
 # LOGGING SETUP
