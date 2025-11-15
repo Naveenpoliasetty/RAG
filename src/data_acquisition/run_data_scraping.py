@@ -1,8 +1,6 @@
-import sys
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from datetime import datetime, timezone
-import json
 from uuid import uuid4
 
 # Import pipeline modules
@@ -14,17 +12,15 @@ from .parser import parse_resume
 # Import MongoDB Manager
 from resume_ingestion.database.mongodb_manager import MongoDBManager
 
-from src.utils.logger import get_logger
-logger = get_logger("RunDataScraping")
+from src.utils.logger import get_pipeline_logger
+logger = get_pipeline_logger(__name__, "RunDataScraping", date_format="%Y-%m-%d")
 
 # -----------------------------------------------------------------------------
 # LOGGING SETUP
 # -----------------------------------------------------------------------------
 global base_path
 base_path = Path(__file__).resolve().parents[2]
-LOG_DIR = base_path / "logs"
-LOG_DIR.mkdir(exist_ok=True)
-log_file = LOG_DIR / "scrape_pipeline.log"
+
 
     
 
@@ -33,7 +29,7 @@ log_file = LOG_DIR / "scrape_pipeline.log"
 # PIPELINE FUNCTIONS
 # -----------------------------------------------------------------------------
 class ScrapePipeline:
-    def __init__(self, batch_size: int = 50, output_dir: str = base_path / "output"):
+    def __init__(self, batch_size: int = 50):
         self.batch_size = batch_size
         
         self.mongo_manager = MongoDBManager()
@@ -41,7 +37,7 @@ class ScrapePipeline:
     def scrape_single_resume(self, url: str):
         """Scrape -> Validate -> Parse one resume end-to-end."""
         try:
-            logger.info(f"🔍 Scraping: {url}")
+            logger.info(f"Scraping: {url}")
             extraction = extract_post_body_safe(url)
 
             # --- Validate structured content ---
@@ -283,7 +279,6 @@ def main():
             logger.info(f"MongoDB: {result['saved_to_mongodb']} successful resumes saved to 'resumes' collection")
             logger.info(f"MongoDB: {result['saved_failed_to_mongodb']} failed resumes saved to 'failed_resumes' collection")
             logger.info(f"Total:   {result['total_urls']} URLs processed")
-            logger.info(f"\nAll data stored in MongoDB - no local files created")
         else:
             logger.error(f"Pipeline failed: {result.get('error', 'Unknown error')}")
             

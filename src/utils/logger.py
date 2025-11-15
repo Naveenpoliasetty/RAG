@@ -2,18 +2,26 @@
 import logging
 import sys
 from pathlib import Path
+from datetime import datetime
 from logging.handlers import RotatingFileHandler
 
 class ProjectLogger:
-    def __init__(self):
+    def __init__(self, default_pipeline="app"):
         self.base_path = Path(__file__).resolve().parents[2]
+        self.default_pipeline = default_pipeline
         self.setup_logging()
     
-    def setup_logging(self):
+    def setup_logging(self, pipeline_name=None):
         """Enhanced centralized logging configuration."""
         
+        if pipeline_name is None:
+            pipeline_name = self.default_pipeline
+            
         LOG_DIR = self.base_path / "logs"
         LOG_DIR.mkdir(exist_ok=True)
+        
+        # Get current date for filename
+        current_date = datetime.now().strftime("%Y%m%d")
         
         # Clear existing handlers
         for handler in logging.root.handlers[:]:
@@ -29,21 +37,20 @@ class ProjectLogger:
             "%(levelname)-8s | %(name)-25s | %(message)s"
         )
         
-        # Handlers
-        # Rotating file handler (max 10MB per file, keep 5 backup files)
+        # Pipeline-specific file handler WITH DATE
         file_handler = RotatingFileHandler(
-            LOG_DIR / "scrape_pipeline.log",
-            maxBytes=10*1024*1024,  # 10MB
+            LOG_DIR / f"{pipeline_name}_{current_date}.log",  # Add date to filename
+            maxBytes=10*1024*1024,
             backupCount=5,
             encoding='utf-8'
         )
         file_handler.setLevel(logging.INFO)
         file_handler.setFormatter(detailed_formatter)
         
-        # Error file handler
+        # Error file handler WITH DATE
         error_handler = RotatingFileHandler(
-            LOG_DIR / "errors.log",
-            maxBytes=5*1024*1024,  # 5MB
+            LOG_DIR / f"errors_{current_date}.log",  # Add date to error file
+            maxBytes=5*1024*1024,
             backupCount=3,
             encoding='utf-8'
         )
@@ -68,18 +75,23 @@ class ProjectLogger:
         logging.getLogger("selenium").setLevel(logging.WARNING)
         
         logger = logging.getLogger(__name__)
-        logger.info("🚀 Enhanced centralized logging configured")
+        logger.info(f"🚀 Logging configured for pipeline: {pipeline_name}")
     
-    def get_logger(self, name):
-        """Get a logger instance."""
+    def get_logger(self, name, pipeline_name=None):
+        """Get a logger instance, optionally for specific pipeline."""
+        if pipeline_name and pipeline_name != self.default_pipeline:
+            self.setup_logging(pipeline_name)
         return logging.getLogger(name)
 
-# Create singleton instance
+# Create default instance
 project_logger = ProjectLogger()
 
-# Convenience function
+# Convenience functions
 def get_logger(name):
     return project_logger.get_logger(name)
+
+def get_pipeline_logger(name, pipeline_name):
+    return project_logger.get_logger(name, pipeline_name)
 
 # Initialize when imported
 get_logger(__name__).info("✅ Logger module loaded")
