@@ -32,6 +32,7 @@ RUN pip install --no-cache-dir uv
 # Copy application code (needed for package installation)
 COPY src/ ./src/
 COPY main.py .
+COPY run_scrp_ingestion.py .
 
 # Install Python dependencies using uv
 RUN uv sync --frozen
