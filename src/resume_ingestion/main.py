@@ -14,7 +14,6 @@ from .database.mongodb_manager import MongoDBManager
 from .ingestion.batch_ingestion_processor import BatchIngestionProcessor
 from .vector_store.embeddings import EmbeddingService
 from .vector_store.qdrant_manager import QdrantManager
-from src.utils.logger import get_logger
 from src.utils.logger import get_pipeline_logger
 
 logger = get_pipeline_logger(__name__, "IngestionPipeline")
