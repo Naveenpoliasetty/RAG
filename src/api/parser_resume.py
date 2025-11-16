@@ -82,8 +82,8 @@ class Experience(BaseModel):
 
 class Resume(BaseModel):
     name: str
-    phone_number: PhoneNumber
-    email: EmailStr
+    phone_number: Optional[PhoneNumber]
+    email: Optional[EmailStr]
     url: Optional[HttpUrl]
     professional_summary: List[str]
     technical_skills: List[str]

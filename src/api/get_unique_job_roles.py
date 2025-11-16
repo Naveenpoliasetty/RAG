@@ -3,10 +3,47 @@ from pymongo import MongoClient
 from typing import List, Dict
 import re
 from fastapi import APIRouter, HTTPException, Depends #type: ignore
-from src.utils.logger import get_logger
-logger = get_logger("GetUniqueJobRoles")
+from src.utils.logger import get_pipeline_logger
+
+logger = get_pipeline_logger(__name__, "GetUniqueJobRoles")
 
 router = APIRouter()
+
+def remove_resume_from_role(role: str) -> str:
+    """
+    Remove 'Resume' and its variations from job role.
+    
+    Args:
+        role: Raw job role string
+        
+    Returns:
+        Job role with Resume keywords removed
+    """
+    if not role:
+        return ""
+    
+    # Remove various forms of 'Resume' with different spellings and cases
+    resume_patterns = [
+        r'\bresume\b',
+        r'\brésumé\b',
+        r'\bresumes\b',
+        r'\brésumés\b',
+        r'\bcv\b',
+        r'\bcvs\b',
+        r'\bcurriculum vitae\b',
+    ]
+    
+    cleaned_role = role
+    for pattern in resume_patterns:
+        cleaned_role = re.sub(pattern, '', cleaned_role, flags=re.IGNORECASE)
+    
+    # Clean up extra spaces and punctuation
+    cleaned_role = re.sub(r'\s+', ' ', cleaned_role)  # Multiple spaces to single space
+    cleaned_role = re.sub(r'^\s+|\s+$', '', cleaned_role)  # Trim spaces
+    cleaned_role = re.sub(r'^[,\-\s]+|[,\-\s]+$', '', cleaned_role)  # Trim punctuation
+    
+    return cleaned_role
+
 def normalize_job_role(role: str) -> str:
     """
     Normalize job role by standardizing common variations.
@@ -17,6 +54,12 @@ def normalize_job_role(role: str) -> str:
     Returns:
         Normalized job role string
     """
+    if not role:
+        return ""
+    
+    # First remove Resume keywords from the role
+    role = remove_resume_from_role(role)
+    
     if not role:
         return ""
     
@@ -44,6 +87,7 @@ def normalize_job_role(role: str) -> str:
     normalized = re.sub(r'^lead\s+', '', normalized)
     normalized = re.sub(r'^sr\s+', '', normalized)
     
+    
     return normalized.strip()
 
 def get_unique_job_roles(
@@ -69,14 +113,24 @@ def get_unique_job_roles(
     try:
         unique_roles = collection.distinct("job_role")
         
-        # Filter out None/empty values
-        clean_roles = [role for role in unique_roles if role]
+        # Filter out None/empty values and remove "Resume" from job roles
+        clean_roles = []
+        for role in unique_roles:
+            if role:
+                # Remove "Resume" from the original role
+                cleaned_role = remove_resume_from_role(role)
+                if cleaned_role and cleaned_role.strip():  # Only add if not empty after removal
+                    clean_roles.append(cleaned_role.strip())
         
         # Create a mapping of normalized -> best original name
         role_mapping = {}
         for role in clean_roles:
             normalized = normalize_job_role(role)
             
+            # Skip if normalized role is empty
+            if not normalized:
+                continue
+                
             # Choose the best original name (prefer longer, more descriptive names)
             if normalized not in role_mapping:
                 role_mapping[normalized] = role
@@ -94,7 +148,7 @@ def get_unique_job_roles(
         return deduplicated_roles
         
     except Exception as e:
-        print(f"Error fetching job roles: {e}")
+        logger.error(f"Error fetching job roles: {e}")
         return []
     finally:
         client.close()
@@ -117,15 +171,24 @@ def get_grouped_job_roles(
     
     try:
         unique_roles = collection.distinct("job_role")
-        clean_roles = [role for role in unique_roles if role]
+        
+        # Filter out None/empty values and remove "Resume" from job roles
+        clean_roles = []
+        for role in unique_roles:
+            if role:
+                # Remove "Resume" from the original role
+                cleaned_role = remove_resume_from_role(role)
+                if cleaned_role and cleaned_role.strip():  # Only add if not empty after removal
+                    clean_roles.append(cleaned_role.strip())
         
         # Group roles by normalized version
         grouped_roles = {}
         for role in clean_roles:
             normalized = normalize_job_role(role)
-            if normalized not in grouped_roles:
-                grouped_roles[normalized] = []
-            grouped_roles[normalized].append(role)
+            if normalized:  # Only add if normalized role is not empty
+                if normalized not in grouped_roles:
+                    grouped_roles[normalized] = []
+                grouped_roles[normalized].append(role)
         
         # Sort groups and variations
         for key in grouped_roles:
@@ -134,8 +197,8 @@ def get_grouped_job_roles(
         return dict(sorted(grouped_roles.items()))
         
     except Exception as e:
-        print(f"Error fetching job roles: {e}")
-        return []
+        logger.error(f"Error fetching job roles: {e}")
+        return {}
     finally:
         client.close()
 
@@ -146,15 +209,15 @@ async def get_unique_job_roles_endpoint(data: List[str] = Depends(get_unique_job
 
 # Usage
 if __name__ == "__main__":
-    print("=== Deduplicated Job Roles ===")
+    logger.info("=== Deduplicated Job Roles ===")
     roles = get_unique_job_roles()
-    print(f"Found {len(roles)} unique job roles:")
+    logger.info(f"Found {len(roles)} unique job roles:")
     for role in roles:
-        print(f"  - {role}")
+        logger.info(f"  - {role}")
     
-    print("\n=== Grouped Job Roles ===")
+    logger.info("\n=== Grouped Job Roles ===")
     grouped = get_grouped_job_roles()
     for normalized, variations in grouped.items():
-        print(f"\n{normalized.upper()}:")
+        logger.info(f"\n{normalized.upper()}:")
         for variation in variations:
-            print(f"  - {variation}")
+            logger.info(f"  - {variation}")

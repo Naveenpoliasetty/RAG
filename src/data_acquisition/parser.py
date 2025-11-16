@@ -4,7 +4,7 @@ logger = get_logger("Parser")
 
 def parse_resume(json_data: Dict[str, Any]) -> Dict[str, Any]:
     resume = {
-        "job_role": json_data.get("job_role", ""),
+        "job_role": json_data.get("job_role", "").replace("Resume", ""),
         "professional_summary": [],
         "technical_skills": [],
         "experiences": []
