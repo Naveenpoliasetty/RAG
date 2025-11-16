@@ -1,10 +1,93 @@
 from typing import Dict, Any
 from src.utils.logger import get_logger
+import re
 logger = get_logger("Parser")
 
+def remove_resume_from_role(role: str) -> str:
+    """
+    Remove 'Resume' and its variations from job role.
+    
+    Args:
+        role: Raw job role string
+        
+    Returns:
+        Job role with Resume keywords removed
+    """
+    if not role:
+        return ""
+    
+    # Remove various forms of 'Resume' with different spellings and cases
+    resume_patterns = [
+        r'\bresume\b',
+        r'\brésumé\b',
+        r'\bresumes\b',
+        r'\brésumés\b',
+        r'\bcv\b',
+        r'\bcvs\b',
+        r'\bcurriculum vitae\b',
+    ]
+    
+    cleaned_role = role
+    for pattern in resume_patterns:
+        cleaned_role = re.sub(pattern, '', cleaned_role, flags=re.IGNORECASE)
+    
+    # Clean up extra spaces and punctuation
+    cleaned_role = re.sub(r'\s+', ' ', cleaned_role)  # Multiple spaces to single space
+    cleaned_role = re.sub(r'^\s+|\s+$', '', cleaned_role)  # Trim spaces
+    cleaned_role = re.sub(r'^[,\-\s]+|[,\-\s]+$', '', cleaned_role)  # Trim punctuation
+    
+    return cleaned_role
+
+def normalize_job_role(role: str) -> str:
+    """
+    Normalize job role by standardizing common variations.
+    
+    Args:
+        role: Raw job role string
+        
+    Returns:
+        Normalized job role string
+    """
+    if not role:
+        return ""
+    
+    # First remove Resume keywords from the role
+    role = remove_resume_from_role(role)
+    
+    if not role:
+        return ""
+    
+    # Convert to lowercase for case-insensitive comparison
+    normalized = role.lower().strip()
+    
+    # Standardize common abbreviations and spellings
+    replacements = {
+        r'\bpl\s*/\s*sql\b': 'pl/sql',
+        r'\bplsql\b': 'pl/sql',
+        r'\bdba\b': 'database administrator',
+        r'\bfi/co\b': 'fi-co',
+        r'\bfi\s*/\s*co\b': 'fi-co',
+        r'\bsr\.\b': 'senior',
+        r'\bsr\b': 'senior',
+        r'\band\b': '&',
+        r'\s+': ' ',  # Normalize multiple spaces
+    }
+    
+    for pattern, replacement in replacements.items():
+        normalized = re.sub(pattern, replacement, normalized)
+    
+    # Remove common prefixes/suffixes that don't change the core role
+    normalized = re.sub(r'^senior\s+', '', normalized)
+    normalized = re.sub(r'^lead\s+', '', normalized)
+    normalized = re.sub(r'^sr\s+', '', normalized)
+    
+    return normalized.strip()
+
 def parse_resume(json_data: Dict[str, Any]) -> Dict[str, Any]:
+    raw_job_role = json_data.get("job_role", "")
+    normalized_job_role = normalize_job_role(raw_job_role)
     resume = {
-        "job_role": json_data.get("job_role", "").replace("Resume", ""),
+        "job_role": normalized_job_role,
         "professional_summary": [],
         "technical_skills": [],
         "experiences": []

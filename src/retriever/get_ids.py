@@ -6,7 +6,7 @@ from src.resume_ingestion.database.mongodb_manager import MongoDBManager
 
 logger = get_logger("DataRetrieverPipeline")
 
-class DataRetrieverPipeline:
+class ResumeIdsRetriever:
     def __init__(self):
         self.mongo_manager = MongoDBManager()
     
@@ -39,7 +39,7 @@ class DataRetrieverPipeline:
 
         
 if __name__ == "__main__":
-    retriever = DataRetrieverPipeline()
+    retriever = ResumeIdsRetriever()
     job_roles = ["Sap Modular"]
     document_ids = retriever.get_document_ids_by_job_roles(job_roles)
     print(document_ids)
