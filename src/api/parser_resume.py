@@ -35,8 +35,7 @@ Follow these rules:
    - Education details (degree, institution, location, start and end years if available)
    - Professional experiences — each experience must include:
        - Job title / role
-       - Company name
-       - Location (if available)
+       - Client name
        - Start and end dates (if available)
        - Responsibilities or achievements (list of bullet points or sentences)
 3. There can be multiple professional experiences and multiple education entries.
@@ -76,6 +75,8 @@ other text or formatting before or after the JSON string.
     return retry_prompt
 
 class Experience(BaseModel):
+    client_name: str
+    duration: str
     job_role: str
     responsibilities: List[str]
     environment: Optional[str]
