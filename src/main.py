@@ -19,7 +19,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Include routerss
+# Include routerss 
+# This is for redeployment testing 
 
 app.include_router(get_unique_job_roles.router, prefix="/api/v1", tags=["Get Unique Job Roles"])
 app.include_router(parser_resume.router, prefix="/api/v1", tags=["Parser Resume"])
