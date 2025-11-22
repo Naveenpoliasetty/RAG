@@ -75,15 +75,15 @@ jobs:
       - name: Health Check
         run: |
           echo "🏥 Running health checks..."
-          
+
           # Check FastAPI health
           echo "Checking FastAPI..."
           curl -f http://${{ secrets.VM_HOST }}:8000/health || exit 1
-          
-          # Check Qdrant health
+
+          # Check Qdrant health (Qdrant uses root endpoint for health)
           echo "Checking Qdrant..."
-          curl -f http://${{ secrets.VM_HOST }}:6333/health || exit 1
-          
+          curl -f http://${{ secrets.VM_HOST }}:6333/ || exit 1
+
           echo "✅ All health checks passed!"
       
       - name: Deployment Summary
