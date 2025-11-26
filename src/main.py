@@ -32,3 +32,5 @@ async def root():
 @app.get("/health")
 async def health():
     return {"status": "healthy", "service": "Resume API"}
+
+print("Hello World")
