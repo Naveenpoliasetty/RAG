@@ -35,7 +35,8 @@ qdrant_storage
 src/output
 models
 llama-3.1-8b
-
+job_roles.json
+result.json
 
 #  PyInstaller
 #  Usually these files are written by a python script from a template

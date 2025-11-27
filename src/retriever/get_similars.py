@@ -10,7 +10,6 @@ class ResumeRetriever:
     """
     Advanced retrieval system for resume redesign with hybrid search capabilities
     """
-    
     def __init__(self, qdrant_manager: QdrantManager):
         self.qdrant = qdrant_manager
         self.collections_mapping = qdrant_manager.collections_mapping
@@ -501,7 +500,6 @@ class ResumeRetriever:
         """Calculate retrieval metrics for analysis"""
         total_results = sum(len(v) for v in results["results_by_collection"].values())
         domain_matches = 0
-        skill_matches = 0
         
         for collection_name, results_list in results["results_by_collection"].items():
             for result in results_list:

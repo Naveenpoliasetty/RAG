@@ -35,6 +35,8 @@ dependencies = [
     "python-multipart>=0.0.20",
     "uvicorn>=0.38.0",
     "pymongo>=4.15.3",
+    "pyversity>=0.1.0",
+    "wordfreq>=3.1.1",
 ]
 
 [tool.setuptools.packages.find]

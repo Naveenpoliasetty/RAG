@@ -1,12 +1,17 @@
 import uuid
 import time
 import re
-from typing import List, Dict, Any, Optional
+import numpy as np
+from collections import defaultdict
+from typing import List, Dict, Any, Optional, Tuple
 from qdrant_client import QdrantClient
 from qdrant_client.http import models as qmodels
 from qdrant_client.http.exceptions import UnexpectedResponse, ApiException
 from src.core.settings import config
 from src.utils.logger import get_logger
+
+# Import your keyword extractor
+from src.utils.keyword_extraction import extract_keywords
 
 logger = get_logger("QdrantManager")
 
@@ -72,7 +77,7 @@ def needs_splitter(
 
 class QdrantManager:
     """
-    Updated QdrantManager that keeps experiences as cohesive chunks.
+    QdrantManager with keyword extraction and matching capabilities.
     """
 
     def __init__(self):
@@ -184,6 +189,7 @@ class QdrantManager:
                 "job_role": qmodels.PayloadSchemaType.TEXT,
                 "chunk_index": qmodels.PayloadSchemaType.INTEGER,
                 "text": qmodels.PayloadSchemaType.TEXT,
+                "keywords": qmodels.PayloadSchemaType.KEYWORD,  # For keyword matching
             }
             
             # For experiences collection, add additional fields
@@ -216,7 +222,7 @@ class QdrantManager:
         """Ensure payload indexes exist for existing collections."""
         try:
             # Basic payload indexes that should exist
-            basic_indexes = ["resume_id", "section", "domain", "job_role"]
+            basic_indexes = ["resume_id", "section", "domain", "job_role", "keywords"]
             
             for field_name in basic_indexes:
                 try:
@@ -233,7 +239,43 @@ class QdrantManager:
             logger.warning(f"Could not ensure payload indexing for '{collection_name}': {e}")
 
     # ---------------------------------------------------------------------
-    # Resume Document Processing (UPDATED - Keep experiences as cohesive chunks)
+    # Keyword Extraction Methods
+    # ---------------------------------------------------------------------
+
+    def _extract_keywords_from_text(self, text: str, min_score: float = 0.9) -> List[str]:
+        """
+        Extract keywords from text using your keyword extractor.
+        """
+        try:
+            if not text or not text.strip():
+                return []
+                
+            keywords = extract_keywords(text, min_score=min_score)
+            logger.debug(f"Extracted {len(keywords)} keywords from text")
+            return keywords
+            
+        except Exception as e:
+            logger.warning(f"Keyword extraction failed: {e}")
+            return []
+
+    def _extract_keywords_from_list(self, items: List[str], min_score: float = 0.9) -> List[str]:
+        """
+        Extract keywords from a list of items (like skills list).
+        """
+        try:
+            if not items:
+                return []
+                
+            # Join items and extract keywords
+            combined_text = " ".join([str(item) for item in items if item])
+            return self._extract_keywords_from_text(combined_text, min_score)
+            
+        except Exception as e:
+            logger.warning(f"Keyword extraction from list failed: {e}")
+            return []
+
+    # ---------------------------------------------------------------------
+    # Resume Document Processing
     # ---------------------------------------------------------------------
 
     def prepare_points_for_resume(self, doc: Dict[str, Any]) -> Dict[str, List[Dict]]:
@@ -313,7 +355,7 @@ class QdrantManager:
         domain: str,
         job_role: str
     ):
-        """Process each experience as a cohesive chunk (or multiple chunks if very long)."""
+        """Process each experience as a cohesive chunk with keyword extraction."""
         for exp_idx, exp in enumerate(experiences):
             try:
                 exp_job_role = exp.get("job_role", "").strip() or job_role
@@ -346,6 +388,9 @@ class QdrantManager:
                 if not full_text.strip():
                     continue
 
+                # Extract keywords from the experience text
+                experience_keywords = self._extract_keywords_from_text(full_text)
+                
                 # Let the embedding service decide if splitting is needed
                 text_chunks = self.embedding_service.chunk_text(full_text)
                 
@@ -357,7 +402,12 @@ class QdrantManager:
                     if not vector:
                         continue
 
-                    # Create proper payload according to Qdrant schema
+                    # Extract keywords for this specific chunk
+                    chunk_keywords = self._extract_keywords_from_text(chunk)
+                    # Combine with experience-level keywords for broader context
+                    all_keywords = list(set(experience_keywords + chunk_keywords))
+
+                    # Create proper payload according to Qdrant schema WITH KEYWORDS
                     payload = {
                         "resume_id": resume_id,
                         "section": "experience",
@@ -369,7 +419,8 @@ class QdrantManager:
                         "chunk_index": chunk_idx,
                         "experience_index": exp_idx,
                         "total_chunks": len(text_chunks),
-                        "text": chunk
+                        "text": chunk,
+                        "keywords": all_keywords  # Add extracted keywords
                     }
                     
                     # Remove empty fields from payload
@@ -382,7 +433,7 @@ class QdrantManager:
                         "payload": payload
                     })
                     
-                    logger.debug(f"Created experience chunk {chunk_idx+1}/{len(text_chunks)} for '{exp_job_role}'")
+                    logger.debug(f"Created experience chunk {chunk_idx+1}/{len(text_chunks)} for '{exp_job_role}' with {len(all_keywords)} keywords")
                     
             except Exception as e:
                 logger.error(f"Error parsing experience {exp_idx} in resume {resume_id}: {e}")
@@ -398,7 +449,7 @@ class QdrantManager:
         domain: str,
         job_role: str
     ):
-        """Process standard sections with proper payload structure."""
+        """Process standard sections with proper payload structure and keyword extraction."""
         try:
             if isinstance(data, list):
                 # Join list items with spaces for embedding
@@ -407,8 +458,13 @@ class QdrantManager:
                     logger.debug(f"Empty text items for section '{section_key}' in resume {resume_id}")
                     return
                 full_text = " ".join(text_items)
+                
+                # Extract keywords from the list data
+                section_keywords = self._extract_keywords_from_list(text_items)
             else:
                 full_text = str(data).strip() if data else ""
+                # Extract keywords from text
+                section_keywords = self._extract_keywords_from_text(full_text)
                 
             if not full_text:
                 logger.debug(f"Empty text for section '{section_key}' in resume {resume_id}")
@@ -425,7 +481,12 @@ class QdrantManager:
                 if not vector:
                     continue
 
-                # Create proper payload according to Qdrant schema
+                # Extract keywords for this specific chunk
+                chunk_keywords = self._extract_keywords_from_text(chunk)
+                # Combine with section-level keywords for broader context
+                all_keywords = list(set(section_keywords + chunk_keywords))
+
+                # Create proper payload according to Qdrant schema WITH KEYWORDS
                 payload = {
                     "resume_id": resume_id,
                     "section": section_key,
@@ -433,7 +494,8 @@ class QdrantManager:
                     "job_role": job_role,
                     "chunk_index": chunk_idx,
                     "total_chunks": len(text_chunks),
-                    "text": chunk
+                    "text": chunk,
+                    "keywords": all_keywords  # Add extracted keywords
                 }
                 
                 point_id = str(uuid.uuid4())
@@ -442,6 +504,8 @@ class QdrantManager:
                     "vector": vector,
                     "payload": payload
                 })
+                
+                logger.debug(f"Created {section_key} chunk {chunk_idx+1}/{len(text_chunks)} with {len(all_keywords)} keywords")
                 
         except Exception as e:
             logger.error(f"Error processing section '{section_key}' for resume {resume_id}: {e}")
@@ -570,6 +634,97 @@ class QdrantManager:
         return point_structs
 
     # ---------------------------------------------------------------------
+    # Simple Keyword Matching
+    # ---------------------------------------------------------------------
+
+    def calculate_keyword_match_percentage(
+        self,
+        job_description: str,
+        resume_ids: List[str]
+    ) -> Dict[str, float]:
+        """
+        Simple keyword matching - calculates what percentage of JD keywords 
+        are found in each resume.
+        
+        Args:
+            job_description: Job description text
+            resume_ids: List of resume IDs to check
+            
+        Returns:
+            Dictionary mapping resume_id -> match_percentage (0.0 to 1.0)
+        """
+        # Extract keywords from job description
+        jd_keywords = set(self._extract_keywords_from_text(job_description))
+        
+        if not jd_keywords:
+            logger.warning("No keywords extracted from job description")
+            return {rid: 0.0 for rid in resume_ids}
+        
+        logger.info(f"Looking for {len(jd_keywords)} JD keywords: {list(jd_keywords)[:10]}...")
+        
+        # Get all resume payloads
+        resume_payloads = self.fetch_all_payloads_for_resume_ids(resume_ids)
+        
+        match_results = {}
+        
+        for resume_id in resume_ids:
+            # Extract all keywords from this resume
+            resume_keywords = set()
+            
+            # Get keywords from all sections of this resume
+            resume_data = resume_payloads.get(resume_id, {})
+            for section_name, payloads in resume_data.items():
+                for payload in payloads:
+                    keywords = payload.get("keywords", [])
+                    resume_keywords.update(keywords)
+            
+            # Calculate match percentage
+            if not jd_keywords:
+                match_percentage = 0.0
+            else:
+                matched_keywords = jd_keywords.intersection(resume_keywords)
+                match_percentage = len(matched_keywords) / len(jd_keywords)
+            
+            match_results[resume_id] = match_percentage
+            
+            logger.info(f"Resume {resume_id}: {match_percentage:.1%} match "
+                       f"({len(matched_keywords)}/{len(jd_keywords)} keywords)")
+        
+        return match_results
+
+    def get_best_keyword_matches(
+        self,
+        job_description: str,
+        resume_ids: List[str],
+        top_k: Optional[int] = None
+    ) -> List[Tuple[str, float]]:
+        """
+        Get resumes sorted by keyword match percentage.
+        
+        Args:
+            job_description: Job description text
+            resume_ids: List of resume IDs to check
+            top_k: Number of top matches to return (None for all)
+            
+        Returns:
+            List of (resume_id, match_percentage) sorted by best match
+        """
+        match_percentages = self.calculate_keyword_match_percentage(job_description, resume_ids)
+        
+        # Sort by match percentage (descending)
+        sorted_matches = sorted(
+            match_percentages.items(),
+            key=lambda x: x[1],
+            reverse=True
+        )
+        
+        # Return top_k if specified
+        if top_k is not None:
+            return sorted_matches[:top_k]
+        
+        return sorted_matches
+
+    # ---------------------------------------------------------------------
     # Query and Management Utilities
     # ---------------------------------------------------------------------
 
@@ -611,12 +766,303 @@ class QdrantManager:
             logger.error(f"Failed to get payload sample from '{collection_name}': {e}")
             return []
 
+    # ----------------------------
+    # Resume matching & retrieval
+    # ----------------------------
+
+    def _search_collection(self, collection_name: str, vector: List[float], top_k: int = 50, resume_ids_filter: Optional[List[str]] = None) -> List[Dict]:
+        """
+        Search a collection and return list of results with resume_id and score.
+        
+        Args:
+            collection_name: Name of the collection to search
+            vector: Query vector for semantic search
+            top_k: Number of top results to return
+            resume_ids_filter: Optional list of resume_ids to filter results by
+        """
+        try:
+            # Build filter if resume_ids_filter is provided
+            search_filter = None
+            if resume_ids_filter:
+                search_filter = qmodels.Filter(
+                    must=[
+                        qmodels.FieldCondition(
+                            key="resume_id",
+                            match=qmodels.MatchAny(any=resume_ids_filter)
+                        )
+                    ]
+                )
+            
+            results = self.client.search(
+                collection_name=collection_name,
+                query_vector=vector,
+                limit=top_k,
+                with_payload=True,
+                with_vectors=False,
+                query_filter=search_filter
+            )
+        except Exception as e:
+            logger.error(f"Search failed on {collection_name}: {e}")
+            return []
+
+        out = []
+        for r in results:
+            payload = r.payload or {}
+            resume_id = payload.get("resume_id")
+            score = float(r.score) if hasattr(r, "score") else None
+            out.append({"resume_id": resume_id, "score": score, "payload": payload})
+        return out
+
+    def match_resumes_for_job_description(
+        self,
+        job_description: str,
+        per_collection_top_k: int = 100,
+        aggregate_top_k: int = 10,
+        weights: Optional[Dict[str, float]] = None,
+        score_aggregation: str = "max",
+        resume_ids_filter: Optional[List[str]] = None
+    ) -> Tuple[List[Tuple[str, float]], Dict[str, Dict[str, Any]]]:
+        """
+        Core pipeline for semantic resume matching.
+        
+        Args:
+            job_description: Job description text to match against
+            per_collection_top_k: Number of top results per collection
+            aggregate_top_k: Number of top resumes to return after aggregation
+            weights: Optional weights for different sections
+            score_aggregation: How to aggregate scores ("max" or "mean")
+            resume_ids_filter: Optional list of resume_ids to filter search results
+        """
+        if weights is None:
+            weights = {
+                "technical_skills": 0.4,
+                "experiences": 0.3,
+                "professional_summary": 0.3
+            }
+
+        # embed job description
+        jd_vecs = self.embedding_service.encode_texts([job_description])
+        if not jd_vecs or len(jd_vecs) == 0:
+            raise QdrantError("Failed to embed job description")
+        jd_vector = jd_vecs[0]
+
+        # map of collection_key -> actual collection name in QdrantManager config
+        collection_name_map = self.collections_mapping
+
+        # search each collection
+        per_collection_results = {}
+        for key, collection_name in collection_name_map.items():
+            try:
+                per_collection_results[key] = self._search_collection(
+                    collection_name, 
+                    jd_vector, 
+                    top_k=per_collection_top_k,
+                    resume_ids_filter=resume_ids_filter
+                )
+            except Exception as e:
+                logger.warning(f"Search error for {collection_name}: {e}")
+                per_collection_results[key] = []
+
+        # aggregate scores per resume_id
+        resume_signals = defaultdict(lambda: {"summary_scores": [], "skills_scores": [], "experience_scores": [], "raw": {}})
+        for key, results in per_collection_results.items():
+            for r in results:
+                rid = r.get("resume_id")
+                if not rid:
+                    continue
+                score = r.get("score", 0.0) or 0.0
+                if key == "professional_summary":
+                    resume_signals[rid]["summary_scores"].append(score)
+                elif key == "technical_skills":
+                    resume_signals[rid]["skills_scores"].append(score)
+                elif key == "experiences":
+                    resume_signals[rid]["experience_scores"].append(score)
+                resume_signals[rid]["raw"].setdefault(key, []).append(r)
+
+        # compute aggregated scalar scores for each resume_id
+        aggregated = {}
+        for rid, s in resume_signals.items():
+            def agg(list_scores):
+                if not list_scores:
+                    return 0.0
+                if score_aggregation == "max":
+                    return float(np.max(list_scores))
+                return float(np.mean(list_scores))
+
+            summary_score = agg(s["summary_scores"])
+            skills_score = agg(s["skills_scores"])
+            exp_score = agg(s["experience_scores"])
+
+            total = (
+                weights.get("professional_summary", 0.0) * summary_score +
+                weights.get("technical_skills", 0.0) * skills_score +
+                weights.get("experiences", 0.0) * exp_score
+            )
+
+            aggregated[rid] = {
+                "score": float(total),
+                "summary_score": summary_score,
+                "skills_score": skills_score,
+                "experience_score": exp_score,
+                "raw": s["raw"]
+            }
+
+        # sort by score descending
+        sorted_resumes = sorted([(rid, v["score"]) for rid, v in aggregated.items()], key=lambda x: x[1], reverse=True)
+
+        # return top-k (or all if less)
+        top_resumes = sorted_resumes[:aggregate_top_k]
+        top_rids = [r for r, _ in top_resumes]
+
+        return top_resumes, {rid: aggregated[rid] for rid in top_rids}
+
+    def fetch_all_payloads_for_resume_ids(self, resume_ids: List[str]) -> Dict[str, Dict[str, List[Dict]]]:
+        """
+        Fetch all payload entries for given resume_ids across all collections.
+        Returns dict: resume_id -> { collection_key: [payloads...] }
+        """
+        out = {rid: {k: [] for k in self.collections_mapping.keys()} for rid in resume_ids}
+
+        for rid in resume_ids:
+            flt = qmodels.Filter(
+                must=[qmodels.FieldCondition(key="resume_id", match=qmodels.MatchValue(value=rid))]
+            )
+            for key, collection_name in self.collections_mapping.items():
+                try:
+                    points, _ = self.client.scroll(
+                        collection_name=collection_name,
+                        with_payload=True,
+                        with_vectors=False,
+                        filter=flt,
+                        limit=1000
+                    )
+                    for p in points:
+                        payload = p.payload or {}
+                        out[rid][key].append(payload)
+                except Exception as e:
+                    logger.warning(f"Failed to fetch payloads for resume_id {rid} from {collection_name}: {e}")
+                    continue
+
+        return out
+
+    def get_resume_ids_by_job_roles(self, job_roles: List[str]) -> List[str]:
+        """
+        Get all unique resume_ids that match any of the given job roles.
+        
+        Args:
+            job_roles: List of job role strings to search for (case-sensitive matching)
+            
+        Returns:
+            List of unique resume_ids that have any of the specified job roles
+        """
+        if not job_roles:
+            logger.warning("Empty job_roles list provided")
+            return []
+        
+        # Clean and validate job roles
+        cleaned_job_roles = [role.strip() for role in job_roles if role and role.strip()]
+        
+        if not cleaned_job_roles:
+            logger.warning("No valid job roles after cleaning")
+            return []
+        
+        logger.info(f"Searching for resumes with job roles: {cleaned_job_roles}")
+        
+        # Use MatchAny to find resumes matching any of the job roles
+        # We'll search across all collections and collect unique resume_ids
+        resume_ids_set = set()
+        
+        for key, collection_name in self.collections_mapping.items():
+            try:
+                # Create filter for job_role matching any of the provided roles
+                # Note: MatchAny does exact matching, so job_roles should match stored values
+                flt = qmodels.Filter(
+                    must=[
+                        qmodels.FieldCondition(
+                            key="job_role",
+                            match=qmodels.MatchAny(any=cleaned_job_roles)
+                        )
+                    ]
+                )
+                
+                # Scroll through all matching points
+                points, _ = self.client.scroll(
+                    collection_name=collection_name,
+                    with_payload=True,
+                    with_vectors=False,
+                    filter=flt,
+                    limit=10000  # Adjust if needed
+                )
+                
+                # Extract unique resume_ids
+                for point in points:
+                    payload = point.payload or {}
+                    resume_id = payload.get("resume_id")
+                    if resume_id:
+                        resume_ids_set.add(resume_id)
+                
+                logger.debug(f"Found {len(resume_ids_set)} unique resume_ids from '{collection_name}' collection")
+                
+            except Exception as e:
+                logger.warning(f"Failed to query '{collection_name}' for job roles: {e}")
+                continue
+        
+        resume_ids_list = list(resume_ids_set)
+        logger.info(f"Found {len(resume_ids_list)} unique resume_ids matching job roles: {cleaned_job_roles}")
+        
+        return resume_ids_list
+
+    def fetch_text_data_from_qdrant(
+        self,
+        resume_ids: List[str],
+        section: str
+    ):
+        """Fetch ALL chunks for given resume_ids directly from Qdrant"""
+        output_blocks = []  
+        logger.info(f"Starting fetch for resume_ids: {resume_ids}, section: {section}")
+
+        for rid in resume_ids:
+            logger.info(f"Processing resume_id: {rid}")
+            
+            # Fetch full payloads for this resume
+            data = self.fetch_all_payloads_for_resume_ids([rid])
+            logger.info(f"Raw data fetched: {data}")
+            
+            if rid not in data:
+                logger.warning(f"Resume ID {rid} not found in fetched data")
+                output_blocks.append("")
+                continue
+                
+            resume_data = data[rid]
+            logger.info(f"Resume data keys: {list(resume_data.keys())}")
+
+            # Choose section chunks
+            if section == "summary":
+                chunks = resume_data.get("professional_summary", [])
+            elif section == "skills":
+                chunks = resume_data.get("technical_skills", [])
+            elif section == "experience":
+                chunks = resume_data.get("experiences", [])
+            else:
+                raise ValueError(f"Unknown section: {section}")
+                
+            logger.info(f"Found {len(chunks)} chunks for section '{section}'")
+
+            # Join all chunk text
+            full_text = " ".join([c.get("text", "") for c in chunks])
+            logger.info(f"Concatenated text length: {len(full_text)}")
+            
+            output_blocks.append(full_text)
+
+        logger.info(f"Final output blocks: {output_blocks}")
+        return output_blocks
+
     def close(self):
         """Close Qdrant connection."""
         try:
             if hasattr(self.client, "close"):
                 self.client.close()
-                logger.info("🔌 Qdrant client closed.")
+                logger.info("Qdrant client closed.")
         except Exception as e:
             logger.warning(f"Error closing Qdrant client: {e}")
 

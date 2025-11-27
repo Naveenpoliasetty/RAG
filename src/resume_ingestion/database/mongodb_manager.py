@@ -166,3 +166,44 @@ class MongoDBManager:
             logger.info("MongoDB connection closed")
         except PyMongoError as e:
             logger.warning(f"Error closing MongoDB connection: {e}")
+
+
+    def get_sections_by_resume_ids(
+        self, 
+        resume_ids: List[str], 
+        section_name: str
+    ) -> List[Dict[str, Any]]:
+        """
+        Fetches only the specified section (e.g., professional_summary)
+        for a list of resume IDs.
+
+        Returns a list of dicts:
+        [
+            { "resume_id": "...", "section": [...] or {...} or None },
+            ...
+        ]
+        """
+        try:
+            # Query by resume_id field instead of _id
+            query = {"_id": {"$in": resume_ids}}
+            
+            # Only query the resume_id + section_name field
+            projection = {
+                "_id": 1,
+                section_name: 1
+            }
+
+            docs = list(
+                self.collection.find(query, projection)
+            )
+
+            results = []
+            for doc in docs:
+                results.append({  # Use the resume_id field, not _id
+                    f"{section_name}": doc.get(section_name, None)
+                })
+            return results
+
+        except Exception as e:
+            logger.error(f"Error fetching sections for resumes: {e}")
+            return []

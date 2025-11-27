@@ -14,7 +14,8 @@ mongodb:
 
 # Qdrant Configuration
 qdrant:
-  host: "localhost"
+  host: "34.130.75.211"
+  url: "http://34.130.75.211:6333/"
   port: 6333
   timeout: 30
   # Add API key if needed (for cloud version)
@@ -51,3 +52,11 @@ retry:
 docker:
   mongodb_service: "resume_mongodb"
   qdrant_service: "resume_qdrant"
+
+
+llm_config:
+  model: "llama3.2-8b"
+  base_url: "http://localhost:8000/v1"
+  SUMMARY_MAX_TOKENS: 450
+  SKILLS_MAX_TOKENS: 200
+  EXPERIENCE_MAX_TOKENS: 450

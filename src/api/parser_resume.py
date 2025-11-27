@@ -8,10 +8,12 @@ import docx2txt
 import os
 import json
 from src.utils.logger import get_logger
-from fastapi import APIRouter, File, UploadFile #type: ignore
+from fastapi import APIRouter, File, UploadFile, Form#type: ignore
 from fastapi.responses import JSONResponse #type: ignore
+from src.generation.resume_generator import orchestrate_resume_generation
 import timeit
 import pdfplumber
+
 
 load_dotenv() 
 logger = get_logger("ParserResume")
@@ -90,6 +92,10 @@ class Resume(BaseModel):
     technical_skills: List[str]
     experiences: List[Experience]
 
+class ParseResumeRequest(BaseModel):
+    job_list: List[str]
+    job_description: str
+
 def doc_to_text(file_path):
     """
     Convert document to text. Supports both .docx and .pdf files.
@@ -116,8 +122,7 @@ def doc_to_text(file_path):
     
     return text
 
-
-def get_response(resume_text: str):
+async def get_response(resume_text: str):
     start_time = timeit.default_timer()
     client = instructor.from_openai(OpenAI())
     resume_data = client.chat.completions.create(
@@ -198,8 +203,45 @@ async def parse_resume_endpoint(file: UploadFile = File(...)):
         f.write(await file.read())
     try:
         resume_data = parse_resume(file_path)
+        resume_dict = json.loads(resume_data)
+
+        resume_dict['experience_count'] = len(resume_dict["experiences"])
+        
         return JSONResponse(content=json.loads(resume_data))
     except Exception as e:
         return JSONResponse(content={"error": str(e)}, status_code=500)
 
-
+@router.post("/generate_resume")
+async def parse_resume_from_text_endpoint(
+    file: UploadFile = File(...),
+    job_description: str = Form(...),
+    related_jobs: str = Form(...)
+):
+    """
+    Unified API to parse resume with job context.
+    Accepts:
+    - file: Resume file upload (.docx or .pdf)
+    - job_description: Job description (string)
+    - related_jobs: JSON string array (e.g., '["Job1", "Job2"]') that will be parsed as a list
+    """
+    try:
+        # Extract text from resume file
+        os.makedirs("uploads", exist_ok=True)
+        file_path = f"uploads/{file.filename}"
+        with open(file_path, "wb") as f:
+            f.write(await file.read())
+        resume_text = doc_to_text(file_path)
+        
+        # Parse related_jobs from JSON string to list
+        parsed_related_jobs = json.loads(related_jobs)
+        
+        # Parse the resume
+        result = await orchestrate_resume_generation(job_description, parsed_related_jobs)
+        with open("result.json", "w") as f:
+            json.dump(result, f, indent=4)
+        with open("resume_text.json", "w") as f:
+            json.dump(resume_text, f, indent=4)
+        return JSONResponse(content=result)
+    except Exception as e:
+        logger.error(f"Error parsing resume: {str(e)}")
+        return JSONResponse(content={"error": str(e)}, status_code=500)
