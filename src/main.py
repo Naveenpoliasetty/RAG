@@ -19,7 +19,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Include routerss
+# Include routerss 
+# This is for redeployment testing 123
 
 app.include_router(get_unique_job_roles.router, prefix="/api/v1", tags=["Get Unique Job Roles"])
 app.include_router(parser_resume.router, prefix="/api/v1", tags=["Parser Resume"])
@@ -32,6 +33,4 @@ async def root():
 async def health():
     return {"status": "healthy", "service": "Resume API"}
 
-@app.get("/health")
-async def health():
-    return {"status": "healthy", "service": "Resume API"}
+print("Hello World")

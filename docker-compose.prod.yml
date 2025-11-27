@@ -7,8 +7,8 @@ services:
     container_name: qdrant-db
     restart: unless-stopped
     ports:
-      - "6333:6333"  # REST API
-      - "6334:6334"  # gRPC API
+      - "6333:6333" # REST API
+      - "6334:6334" # gRPC API
     volumes:
       - qdrant-data:/qdrant/storage
     environment:
@@ -22,6 +22,8 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.api
+      args:
+        COMMIT_SHA: ${COMMIT_SHA:-local}
     container_name: resume-api
     restart: unless-stopped
     ports:
@@ -74,4 +76,3 @@ volumes:
     #   type: none
     #   o: bind
     #   device: /mnt/qdrant-data
-
