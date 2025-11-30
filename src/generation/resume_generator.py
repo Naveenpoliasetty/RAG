@@ -256,7 +256,8 @@ async def orchestrate_resume_generation(
     keyword_weight: float = 0.3,
     top_k_summary: int = 3,
     top_k_skills: int = 3,
-    top_k_experience: int = 6
+    top_k_experience: int = 6,
+    experience_count: int = None
 ):
     """
     Orchestrate resume generation using section-level hybrid search.
@@ -270,7 +271,10 @@ async def orchestrate_resume_generation(
         top_k_summary: Number of resumes to use for professional summary (default 3)
         top_k_skills: Number of resumes to use for technical skills (default 3)
         top_k_experience: Number of resumes to use for experiences (default 6)
+        experience_count: Number of experiences in the uploaded resume (optional)
     """
+    if experience_count:
+        top_k_experience = experience_count * 3
     generator = ResumeGenerator(llm_json_fn=llm_json)
     qdrant_manager = QdrantManager()
     retriever = ResumeIdsRetriever()
