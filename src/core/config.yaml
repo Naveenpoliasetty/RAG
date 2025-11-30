@@ -55,8 +55,27 @@ docker:
 
 
 llm_config:
-  model: "llama3.2-8b"
-  base_url: "http://localhost:8000/v1"
+  # Model name (optional)
+  # - If set to null/empty/omitted: Uses "meta-llama/llama-3.1-8b-instruct" (common RunPod default)
+  # - If set to a model name: Uses that specific model name
+  # Note: The default model name matches what RunPod endpoints typically use
+  model: "meta-llama/llama-3.1-8b-instruct" # Set to null/empty to use default, or specify a model name like "meta-llama/llama-3.1-8b-instruct"
+  # model: "meta-llama/llama-3.1-8b-instruct"  # Uncomment to explicitly set model
+  # RunPod vLLM server endpoint (OpenAI-compatible)
+  # IMPORTANT: For RunPod vLLM servers, you need the OpenAI-compatible endpoint, NOT the serverless API endpoint
+  # 
+  # To get your OpenAI-compatible endpoint:
+  # 1. Go to RunPod dashboard -> Your Pod -> Endpoints
+  # 2. Look for the endpoint that ends with "/v1" (OpenAI-compatible)
+  # 3. Format: https://<pod-id>-<port>.proxy.runpod.net/v1
+  #    Example: https://abc123def456-5000.proxy.runpod.net/v1
+  #
+  # NOTE: The serverless API endpoint (https://api.runpod.ai/v2/...) is NOT OpenAI-compatible
+  #       and won't work with the OpenAI client wrapper
+
+  base_url: "https://api.runpod.ai/v2/bzmcy73lvqb7o8/openai/v1"
+  # RunPod API key (Bearer token)
+  # You can also set this via RUNPOD_API_KEY or OPENAI_API_KEY environment variable  # Replace with your actual API key
   SUMMARY_MAX_TOKENS: 450
   SKILLS_MAX_TOKENS: 200
   EXPERIENCE_MAX_TOKENS: 450

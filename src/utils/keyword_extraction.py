@@ -29,7 +29,6 @@ def extract_candidates(text):
     doc = nlp(text)
     candidates = []
 
-    # 1️⃣ Single-token candidates (nouns, proper nouns, acronyms)
     for token in doc:
         if token.pos_ in ("NOUN", "PROPN"):
             w = token.text.strip()
@@ -39,7 +38,7 @@ def extract_candidates(text):
         if is_acronym(token.text):
             candidates.append(token.text)
 
-    # 2️⃣ Multi-word noun chunks (e.g., "cloud infrastructure")
+
     for chunk in doc.noun_chunks:
         phrase = chunk.text.strip()
         # Remove chunks that are entirely stopwords

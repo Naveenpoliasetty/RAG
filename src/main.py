@@ -1,8 +1,9 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from src.api import parser_resume, get_unique_job_roles
+from src.api import parser_resume, get_unique_job_roles, generate_resume
 from src.core.config import settings
+
 
 app = FastAPI(
     title=settings.APP_NAME,
@@ -19,11 +20,11 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Include routerss 
-# This is for redeployment testing 123
+# Include routerss      
 
 app.include_router(get_unique_job_roles.router, prefix="/api/v1", tags=["Get Unique Job Roles"])
 app.include_router(parser_resume.router, prefix="/api/v1", tags=["Parser Resume"])
+app.include_router(generate_resume.router, prefix="/api/v1", tags=["Resume Generator"])
 
 @app.get("/")
 async def root():
@@ -33,4 +34,3 @@ async def root():
 async def health():
     return {"status": "healthy", "service": "Resume API"}
 
-print("Hello World")

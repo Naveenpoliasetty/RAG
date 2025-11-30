@@ -1,7 +1,6 @@
 from pydantic import BaseModel, EmailStr, HttpUrl, ValidationError
 from pydantic_extra_types.phone_numbers import PhoneNumber
 from typing import List, Optional
-from openai import OpenAI
 import instructor
 from dotenv import load_dotenv
 import docx2txt
@@ -11,6 +10,7 @@ from src.utils.logger import get_logger
 from fastapi import APIRouter, File, UploadFile, Form#type: ignore
 from fastapi.responses import JSONResponse #type: ignore
 from src.generation.resume_generator import orchestrate_resume_generation
+from src.utils.llm_client import get_openai_client, get_llm_model
 import timeit
 import pdfplumber
 
@@ -122,17 +122,23 @@ def doc_to_text(file_path):
     
     return text
 
+from src.utils.llm_client import get_openai_client, get_llm_model
+
 async def get_response(resume_text: str):
     start_time = timeit.default_timer()
-    client = instructor.from_openai(OpenAI())
-    resume_data = client.chat.completions.create(
-        model="gpt-4o-mini",
-        response_model=Resume,
-        messages=[
+    client = instructor.from_openai(get_openai_client())
+    
+    # Build request parameters
+    request_params = {
+        "model": get_llm_model(),  # Get model from config or use default
+        "response_model": Resume,
+        "messages": [
             {"role": "system", "content": SYSTEM_PROMPT},
             {"role": "user", "content": f"Extract the relevant information from the following resume text:\n\n'''{resume_text}'''"}
         ],
-    )
+    }
+    
+    resume_data = client.chat.completions.create(**request_params)
     end_time = timeit.default_timer()
     logger.info(f"Time taken: {end_time - start_time} seconds")
     return resume_data.model_dump_json(indent=2)
@@ -212,13 +218,13 @@ async def parse_resume_endpoint(file: UploadFile = File(...)):
         return JSONResponse(content={"error": str(e)}, status_code=500)
 
 @router.post("/generate_resume")
-async def parse_resume_from_text_endpoint(
+async def generate_resume_endpoint(
     file: UploadFile = File(...),
     job_description: str = Form(...),
     related_jobs: str = Form(...)
 ):
     """
-    Unified API to parse resume with job context.
+    Unified API to generate resume with job context.
     Accepts:
     - file: Resume file upload (.docx or .pdf)
     - job_description: Job description (string)
@@ -232,10 +238,27 @@ async def parse_resume_from_text_endpoint(
             f.write(await file.read())
         resume_text = doc_to_text(file_path)
         
-        # Parse related_jobs from JSON string to list
-        parsed_related_jobs = json.loads(related_jobs)
+        # Parse related_jobs from JSON string to list and validate
+        try:
+            parsed_related_jobs = json.loads(related_jobs)
+            if not isinstance(parsed_related_jobs, list):
+                return JSONResponse(
+                    content={"error": "related_jobs must be a JSON array (list)"},
+                    status_code=400
+                )
+            # Ensure all items in the list are strings
+            if not all(isinstance(item, str) for item in parsed_related_jobs):
+                return JSONResponse(
+                    content={"error": "All items in related_jobs must be strings"},
+                    status_code=400
+                )
+        except json.JSONDecodeError as e:
+            return JSONResponse(
+                content={"error": f"Invalid JSON format for related_jobs: {str(e)}"},
+                status_code=400
+            )
         
-        # Parse the resume
+        # Generate resume sections using job_roles (related_jobs)
         result = await orchestrate_resume_generation(job_description, parsed_related_jobs)
         with open("result.json", "w") as f:
             json.dump(result, f, indent=4)
@@ -243,5 +266,5 @@ async def parse_resume_from_text_endpoint(
             json.dump(resume_text, f, indent=4)
         return JSONResponse(content=result)
     except Exception as e:
-        logger.error(f"Error parsing resume: {str(e)}")
+        logger.error(f"Error generating resume: {str(e)}")
         return JSONResponse(content={"error": str(e)}, status_code=500)
