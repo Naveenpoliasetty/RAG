@@ -3,7 +3,6 @@ name: Deploy to GCP VM
 on:
   push:
     branches:
-      - main
       - pipelines/data_scraping_pipepline
   workflow_dispatch: # Allow manual trigger
 

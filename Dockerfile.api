@@ -49,6 +49,9 @@ RUN uv sync --frozen
 # Install the package itself (makes src modules importable)
 RUN uv pip install -e .
 
+# Download spaCy language model
+RUN uv pip install https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl
+
 # Add virtual environment to PATH so uvicorn is accessible
 ENV PATH="/app/.venv/bin:$PATH"
 
