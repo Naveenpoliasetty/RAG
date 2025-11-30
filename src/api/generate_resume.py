@@ -5,7 +5,7 @@ import os
 from src.generation.resume_generator import orchestrate_resume_generation
 from src.utils.logger import get_logger
 
-from src.data_acquisition.parser import doc_to_text
+from src.api.parser_resume import doc_to_text, parse_resume
 
 logger = get_logger(__name__)
 router = APIRouter()
@@ -15,14 +15,18 @@ router = APIRouter()
 async def generate_resume_endpoint(
     file: UploadFile = File(...),
     job_description: str = Form(...),
-    related_jobs: str = Form(...)
+    related_jobs: str = Form(...),
+    semantic_weight: float = Form(0.7),
+    keyword_weight: float = Form(0.3)
 ):
     """
-    Unified API to generate resume with job context.
+    Unified API to generate resume with job context using hybrid search.
     Accepts:
     - file: Resume file upload (.docx or .pdf)
     - job_description: Job description (string)
     - related_jobs: JSON string array (e.g., '["Job1", "Job2"]') that will be parsed as a list
+    - semantic_weight: Weight for semantic similarity (default 0.7)
+    - keyword_weight: Weight for keyword matching (default 0.3)
     """
     try:
         # Extract text from resume file
@@ -30,7 +34,10 @@ async def generate_resume_endpoint(
         file_path = f"uploads/{file.filename}"
         with open(file_path, "wb") as f:
             f.write(await file.read())
-        resume_text = doc_to_text(file_path)
+        resume_data = await parse_resume(file_path)
+        resume_dict = json.loads(resume_data)
+
+        experience_count = len(resume_dict["experiences"])
         
         # Delete the file after extracting text
         try:
@@ -60,8 +67,14 @@ async def generate_resume_endpoint(
                 status_code=400
             )
         
-        # Generate resume sections using job_roles (related_jobs)
-        result = await orchestrate_resume_generation(job_description, parsed_related_jobs)
+        # Generate resume sections using job_roles (related_jobs) with hybrid search
+        result = await orchestrate_resume_generation(
+            job_description, 
+            parsed_related_jobs,
+            semantic_weight=semantic_weight,
+            keyword_weight=keyword_weight,
+            experience_count=experience_count
+        )
         with open("result.json", "w") as f:
             json.dump(result, f, indent=4)
         with open("resume_text.json", "w") as f:

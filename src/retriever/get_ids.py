@@ -26,10 +26,40 @@ class ResumeIdsRetriever:
             List of document ObjectIds
         """
         normalized_job_roles = [normalize_job_role(role) for role in job_roles]
+        
+        # Generate variations for roles with slashes to handle inconsistent DB data
+        expanded_roles = set(normalized_job_roles)
+        for role in normalized_job_roles:
+            if "/" in role:
+                # We want to generate all 4 combinations of spacing around slash:
+                # "a/b", "a / b", "a/ b", "a /b"
+                
+                # First, standardize to " / " to make splitting easy
+                # (normalize_job_role already reduces multiple spaces to one)
+                temp = role.replace("/", " / ").replace("  ", " ")
+                parts = temp.split(" / ")
+                
+                if len(parts) > 1:
+                    # Reconstruct with different separators
+                    # Note: This simple approach assumes one slash. 
+                    # For multiple slashes, it might be combinatorial, but let's stick to simple replacement for now.
+                    
+                    # 1. No spaces: "a/b"
+                    expanded_roles.add("/".join(parts))
+                    # 2. Both spaces: "a / b"
+                    expanded_roles.add(" / ".join(parts))
+                    # 3. Left space: "a /b"
+                    expanded_roles.add(" /".join(parts))
+                    # 4. Right space: "a/ b"
+                    expanded_roles.add("/ ".join(parts))
+
+        search_roles = list(expanded_roles)
+        logger.info(f"Searching for job roles: {search_roles}")
+
         try:
             # Simple query - just get IDs for the job roles
             documents = list(self.mongo_manager.collection.find(
-                {"job_role": {"$in": normalized_job_roles}},
+                {"job_role": {"$in": search_roles}},
                 {"_id": 1}  # Only return the _id field
             ))
             
@@ -54,7 +84,7 @@ class ResumeIdsRetriever:
         )
 
         top_ids = [rid for rid, _ in top_list]
-        contents = self.qdrant_manager._fetch_all_payloads_for_resume_ids(top_ids)
+        contents = self.qdrant_manager.fetch_all_payloads_for_resume_ids(top_ids)
 
         # Optionally, prepare compact structures for downstream LLM prompt
         compact = {}

@@ -11,7 +11,10 @@ load_dotenv()
 # Your async LLM JSON generator (RunPod vLLM with OpenAI wrapper)
 async def llm_json(output_model: Type[BaseModel], system_prompt:str, user_prompt: str):
     logger.info(f"role: system, content: {system_prompt}, role: user, content: {user_prompt}")
-    client = instructor.patch(get_openai_client())
+    client = instructor.from_openai(
+        get_openai_client(),
+        mode=instructor.Mode.JSON,
+    )
     
     # Build request parameters
     request_params = {

@@ -5,6 +5,7 @@ from src.generation.prompts import SUMMARY_SYSTEM_PROMPT, SKILLS_SYSTEM_PROMPT, 
 import asyncio
 from src.resume_ingestion.vector_store.qdrant_manager import QdrantManager
 from src.resume_ingestion.database.mongodb_manager import MongoDBManager
+from src.retriever.get_ids import ResumeIdsRetriever
 from src.generation.call_llm import llm_json
 import json
 from src.utils.logger import get_logger
@@ -139,8 +140,7 @@ class ResumeGenerator:
                 for b in section.bullets
             ]
 
-    # -----------------------------------------------------
-    # MAIN ORCHESTRATOR
+     # ----------------------------------------------------- MAIN ORCHESTRATOR
     # -----------------------------------------------------
     async def generate_all_sections(
         self,
@@ -194,20 +194,90 @@ class ResumeGenerator:
             "experience": exp_out.model_dump()
         }
 
-async def orchestrate_resume_generation(job_description: str, job_roles: List[str]):
+    async def _generate_all_sections_direct(
+        self,
+        job_description: str,
+        summary_data: Any,
+        skills_data: Any,
+        exp_data: Any,
+        top_k_summary: int = 3,
+        top_k_skills: int = 3,
+        top_k_experience: int = 6
+    ):
+        """
+        Generate all sections directly from provided data (used for section-level search).
+        
+        Args:
+            job_description: Job description text
+            summary_data: Professional summary data from MongoDB
+            skills_data: Technical skills data from MongoDB
+            exp_data: Experience data from MongoDB
+            top_k_summary: Number of summaries to generate
+            top_k_skills: Number of skills to generate
+            top_k_experience: Number of experiences to generate
+        """
+        # ------------ PROMPTS -----------------
+        summary_prompt = self._build_prompt(SUMMARY_USER_PROMPT, job_description, summary_data, top_k_summary)
+        skills_prompt = self._build_prompt(SKILLS_USER_PROMPT, job_description, skills_data, top_k_skills)
+        exp_prompt = self._build_prompt(EXPERIENCE_USER_PROMPT, job_description, exp_data, top_k_experience)
+
+        logger.info(f"Skills Prompt: {skills_prompt}")
+
+        # ------------ ASYNC LLM CALLS ----------
+        summary_task = asyncio.create_task(
+            self._call_llm_json_async(SummaryOutput, SUMMARY_SYSTEM_PROMPT, summary_prompt)
+        )
+        skills_task = asyncio.create_task(
+            self._call_llm_json_async(TechnicalSkillsOutput, SKILLS_SYSTEM_PROMPT, skills_prompt)
+        )
+        exp_task = asyncio.create_task(
+            self._call_llm_json_async(ExperienceOutput, EXPERIENCE_SYSTEM_PROMPT, exp_prompt)
+        )
+
+        summary_out, skills_out, exp_out = await asyncio.gather(
+            summary_task, skills_task, exp_task
+        )
+
+        # ------------ HARD TRUNCATION ----------
+        self._enforce_output_limits(summary_out, skills_out, exp_out)
+
+        # ------------ RETURN -------------------
+        return {
+            "professional_summary": summary_out.model_dump(),
+            "technical_skills": skills_out.model_dump(),
+            "experience": exp_out.model_dump()
+        }
+
+
+async def orchestrate_resume_generation(
+    job_description: str, 
+    job_roles: List[str],
+    semantic_weight: float = 0.7,
+    keyword_weight: float = 0.3,
+    top_k_summary: int = 3,
+    top_k_skills: int = 3,
+    top_k_experience: int = 6
+):
     """
-    Orchestrate resume generation by filtering resumes by job roles first,
-    then matching against job description.
+    Orchestrate resume generation using section-level hybrid search.
+    Each section (summary, skills, experiences) is searched independently with hybrid scoring.
     
     Args:
         job_description: Job description text
         job_roles: List of job role strings to filter resumes by
+        semantic_weight: Weight for semantic similarity (default 0.7)
+        keyword_weight: Weight for keyword matching (default 0.3)
+        top_k_summary: Number of resumes to use for professional summary (default 3)
+        top_k_skills: Number of resumes to use for technical skills (default 3)
+        top_k_experience: Number of resumes to use for experiences (default 6)
     """
     generator = ResumeGenerator(llm_json_fn=llm_json)
     qdrant_manager = QdrantManager()
+    retriever = ResumeIdsRetriever()
     
     # First, filter resumes by job roles
-    filtered_resume_ids = qdrant_manager.get_resume_ids_by_job_roles(job_roles)
+    filtered_resume_object_ids = retriever.get_resume_ids_by_job_roles(job_roles)
+    filtered_resume_ids = [str(oid) for oid in filtered_resume_object_ids]
     
     if not filtered_resume_ids:
         logger.warning(f"No resumes found matching job roles: {job_roles}")
@@ -219,26 +289,62 @@ async def orchestrate_resume_generation(job_description: str, job_roles: List[st
     
     logger.info(f"Found {len(filtered_resume_ids)} resumes matching job roles: {job_roles}")
     
-    # Then, get candidate matches from filtered resumes only
-    top_resumes, details = qdrant_manager.match_resumes_for_job_description(
-        job_description,
-        resume_ids_filter=filtered_resume_ids
-    )
+    # Section-specific hybrid searches
+    logger.info("Performing section-level hybrid search...")
     
-    if not top_resumes:
-        logger.warning("No resumes matched after semantic search")
-        return {
-            "professional_summary": {},
-            "technical_skills": {},
-            "experience": {}
-        }
-    
-    # Then generate sections
-    result = await generator.generate_all_sections(
+    # Search for best professional summaries
+    summary_results = qdrant_manager.match_resumes_by_section(
         job_description=job_description,
-        details=details,
+        section_key="professional_summary",
+        top_k=top_k_summary,
+        resume_ids_filter=filtered_resume_ids,
+        semantic_weight=semantic_weight,
+        keyword_weight=keyword_weight
     )
-    print(result)
+    summary_rids = [rid for rid, score in summary_results]
+    logger.info(f"Top {len(summary_rids)} resumes for professional_summary: {summary_rids}")
+    
+    # Search for best technical skills
+    skills_results = qdrant_manager.match_resumes_by_section(
+        job_description=job_description,
+        section_key="technical_skills",
+        top_k=top_k_skills,
+        resume_ids_filter=filtered_resume_ids,
+        semantic_weight=semantic_weight,
+        keyword_weight=keyword_weight
+    )
+    skills_rids = [rid for rid, score in skills_results]
+    logger.info(f"Top {len(skills_rids)} resumes for technical_skills: {skills_rids}")
+    
+    # Search for best experiences
+    exp_results = qdrant_manager.match_resumes_by_section(
+        job_description=job_description,
+        section_key="experiences",
+        top_k=top_k_experience,
+        resume_ids_filter=filtered_resume_ids,
+        semantic_weight=semantic_weight,
+        keyword_weight=keyword_weight
+    )
+    exp_rids = [rid for rid, score in exp_results]
+    logger.info(f"Top {len(exp_rids)} resumes for experiences: {exp_rids}")
+    
+    # Fetch data from MongoDB for each section
+    mongodb_manager = MongoDBManager()
+    summary_data = mongodb_manager.get_sections_by_resume_ids(summary_rids, "professional_summary")
+    skills_data = mongodb_manager.get_sections_by_resume_ids(skills_rids, "technical_skills")
+    exp_data = mongodb_manager.get_sections_by_resume_ids(exp_rids, "experiences")
+    
+    # Generate sections using section-specific data
+    result = await generator._generate_all_sections_direct(
+        job_description=job_description,
+        summary_data=summary_data,
+        skills_data=skills_data,
+        exp_data=exp_data,
+        top_k_summary=top_k_summary,
+        top_k_skills=top_k_skills,
+        top_k_experience=top_k_experience
+    )
+    
     return result
 
 if __name__ == "__main__":

@@ -23,36 +23,52 @@ class Config:
         except yaml.YAMLError as e:
             raise Exception(f"Error parsing YAML configuration: {e}")
     
+    def _clean_env_value(self, value: str) -> str:
+        """Clean environment variable value by removing comments and whitespace.
+        
+        Handles values like '6333 #for prod' -> '6333'
+        """
+        if not value:
+            return value
+        # Remove everything after # (comment) and strip whitespace
+        cleaned = value.split('#')[0].strip()
+        return cleaned
+    
     def _override_with_env_vars(self):
         """Override configuration with environment variables."""
         # MongoDB
         if os.getenv("MONGO_URI"):
-            self._config['mongodb']['uri'] = os.getenv("MONGO_URI")
+            self._config['mongodb']['uri'] = self._clean_env_value(os.getenv("MONGO_URI"))
         if os.getenv("MONGO_DB"):
-            self._config['mongodb']['database'] = os.getenv("MONGO_DB")
+            self._config['mongodb']['database'] = self._clean_env_value(os.getenv("MONGO_DB"))
         if os.getenv("MONGO_COLLECTION"):
-            self._config['mongodb']['collection'] = os.getenv("MONGO_COLLECTION")
+            self._config['mongodb']['collection'] = self._clean_env_value(os.getenv("MONGO_COLLECTION"))
         
         # Qdrant
         if os.getenv("QDRANT_HOST"):
-            self._config['qdrant']['host'] = os.getenv("QDRANT_HOST")
+            self._config['qdrant']['host'] = self._clean_env_value(os.getenv("QDRANT_HOST"))
         if os.getenv("QDRANT_PORT"):
-            self._config['qdrant']['port'] = int(os.getenv("QDRANT_PORT"))
+            port_value = self._clean_env_value(os.getenv("QDRANT_PORT"))
+            self._config['qdrant']['port'] = int(port_value)
         
         # Embeddings
         if os.getenv("EMBED_MODEL"):
-            self._config['embeddings']['model'] = os.getenv("EMBED_MODEL")
+            self._config['embeddings']['model'] = self._clean_env_value(os.getenv("EMBED_MODEL"))
         
         # Processing
         if os.getenv("BATCH_SIZE"):
-            self._config['processing']['batch_size'] = int(os.getenv("BATCH_SIZE"))
+            batch_size_value = self._clean_env_value(os.getenv("BATCH_SIZE"))
+            self._config['processing']['batch_size'] = int(batch_size_value)
         if os.getenv("BATCH_TIMEOUT"):
-            self._config['processing']['batch_timeout'] = float(os.getenv("BATCH_TIMEOUT"))
+            batch_timeout_value = self._clean_env_value(os.getenv("BATCH_TIMEOUT"))
+            self._config['processing']['batch_timeout'] = float(batch_timeout_value)
 
         if os.getenv("RETRY_LIMIT"):
-            self._config['processing']['retry_limit'] = int(os.getenv("RETRY_LIMIT"))
+            retry_limit_value = self._clean_env_value(os.getenv("RETRY_LIMIT"))
+            self._config['processing']['retry_limit'] = int(retry_limit_value)
         if os.getenv("RESET_AFTER_MINUTES"):
-            self._config['processing']['reset_after_minutes'] = int(os.getenv("RESET_AFTER_MINUTES"))
+            reset_value = self._clean_env_value(os.getenv("RESET_AFTER_MINUTES"))
+            self._config['processing']['reset_after_minutes'] = int(reset_value)
     
     @property
     def mongodb_uri(self) -> str:

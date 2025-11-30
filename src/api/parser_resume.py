@@ -1,5 +1,4 @@
 from pydantic import BaseModel, EmailStr, HttpUrl, ValidationError
-from pydantic_extra_types.phone_numbers import PhoneNumber
 from typing import List, Optional
 import instructor
 from dotenv import load_dotenv
@@ -84,12 +83,13 @@ class Experience(BaseModel):
 
 class Resume(BaseModel):
     name: str
-    phone_number: Optional[PhoneNumber]
+    phone_number: Optional[str]
     email: Optional[EmailStr]
     url: Optional[HttpUrl]
     professional_summary: List[str]
     technical_skills: List[str]
     experiences: List[Experience]
+    
 
 class ParseResumeRequest(BaseModel):
     job_list: List[str]
@@ -121,11 +121,12 @@ def doc_to_text(file_path):
     
     return text
 
-from src.utils.llm_client import get_openai_client, get_llm_model
-
 async def get_response(resume_text: str):
     start_time = timeit.default_timer()
-    client = instructor.from_openai(get_openai_client())
+    client = instructor.from_openai(
+        get_openai_client(),
+        mode=instructor.Mode.JSON,
+    )
     
     # Build request parameters
     request_params = {
@@ -157,11 +158,11 @@ def validate_with_model(data_model, llm_response):
         return None, error_message
 
 # Define a function to automatically retry an LLM call multiple times
-def validate_llm_response(
+async def validate_llm_response(
     prompt, data_model, n_retry=5
 ):
     # Initial LLM call
-    response_content = get_response(prompt)
+    response_content = await get_response(prompt)
     current_prompt = prompt
 
     # Try to validate with the model
@@ -186,7 +187,7 @@ def validate_llm_response(
                 original_response=response_content,
                 error_message=validation_error
             )
-            response_content = get_response(
+            response_content = await get_response(
                 validation_retry_prompt)
             current_prompt = validation_retry_prompt
             continue
@@ -194,9 +195,9 @@ def validate_llm_response(
         # If you get here, both parsing and validation succeeded
         return validated_data, None
 
-def parse_resume(file_path):
+async def parse_resume(file_path):
     text_data = doc_to_text(file_path)
-    resume_data = get_response(text_data)
+    resume_data = await get_response(text_data)
     return resume_data
 
 
@@ -207,7 +208,7 @@ async def parse_resume_endpoint(file: UploadFile = File(...)):
     with open(file_path, "wb") as f:
         f.write(await file.read())
     try:
-        resume_data = parse_resume(file_path)
+        resume_data = await parse_resume(file_path)
         resume_dict = json.loads(resume_data)
 
         resume_dict['experience_count'] = len(resume_dict["experiences"])

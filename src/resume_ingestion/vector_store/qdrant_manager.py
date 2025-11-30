@@ -820,18 +820,22 @@ class QdrantManager:
         aggregate_top_k: int = 10,
         weights: Optional[Dict[str, float]] = None,
         score_aggregation: str = "max",
-        resume_ids_filter: Optional[List[str]] = None
+        resume_ids_filter: Optional[List[str]] = None,
+        semantic_weight: float = 0.7,
+        keyword_weight: float = 0.3
     ) -> Tuple[List[Tuple[str, float]], Dict[str, Dict[str, Any]]]:
         """
-        Core pipeline for semantic resume matching.
+        Hybrid resume matching pipeline combining semantic search and keyword matching.
         
         Args:
             job_description: Job description text to match against
             per_collection_top_k: Number of top results per collection
             aggregate_top_k: Number of top resumes to return after aggregation
-            weights: Optional weights for different sections
+            weights: Optional weights for different sections (for semantic scoring)
             score_aggregation: How to aggregate scores ("max" or "mean")
             resume_ids_filter: Optional list of resume_ids to filter search results
+            semantic_weight: Weight for semantic similarity score (default 0.7)
+            keyword_weight: Weight for keyword match score (default 0.3)
         """
         if weights is None:
             weights = {
@@ -893,21 +897,42 @@ class QdrantManager:
             skills_score = agg(s["skills_scores"])
             exp_score = agg(s["experience_scores"])
 
-            total = (
+            semantic_score = (
                 weights.get("professional_summary", 0.0) * summary_score +
                 weights.get("technical_skills", 0.0) * skills_score +
                 weights.get("experiences", 0.0) * exp_score
             )
 
             aggregated[rid] = {
-                "score": float(total),
+                "semantic_score": float(semantic_score),
                 "summary_score": summary_score,
                 "skills_score": skills_score,
                 "experience_score": exp_score,
                 "raw": s["raw"]
             }
 
-        # sort by score descending
+        # Extract all resume IDs that were found
+        all_resume_ids = list(aggregated.keys())
+        
+        # Calculate keyword match scores
+        logger.info(f"Calculating keyword matches for {len(all_resume_ids)} resumes...")
+        keyword_match_scores = self.calculate_keyword_match_percentage(job_description, all_resume_ids)
+        
+        # Combine semantic and keyword scores
+        for rid in all_resume_ids:
+            semantic_score = aggregated[rid]["semantic_score"]
+            keyword_score = keyword_match_scores.get(rid, 0.0)
+            
+            # Hybrid score: weighted combination
+            hybrid_score = (semantic_weight * semantic_score) + (keyword_weight * keyword_score)
+            
+            # Store both scores for debugging/analysis
+            aggregated[rid]["keyword_score"] = float(keyword_score)
+            aggregated[rid]["score"] = float(hybrid_score)
+            
+            logger.debug(f"Resume {rid}: semantic={semantic_score:.3f}, keyword={keyword_score:.3f}, hybrid={hybrid_score:.3f}")
+
+        # sort by hybrid score descending
         sorted_resumes = sorted([(rid, v["score"]) for rid, v in aggregated.items()], key=lambda x: x[1], reverse=True)
 
         # return top-k (or all if less)
@@ -916,6 +941,136 @@ class QdrantManager:
 
         return top_resumes, {rid: aggregated[rid] for rid in top_rids}
 
+    def match_resumes_by_section(
+        self,
+        job_description: str,
+        section_key: str,
+        top_k: int = 10,
+        resume_ids_filter: Optional[List[str]] = None,
+        semantic_weight: float = 0.7,
+        keyword_weight: float = 0.3
+    ) -> List[Tuple[str, float]]:
+        """
+        Hybrid search for a specific section (professional_summary, technical_skills, or experiences).
+        
+        Args:
+            job_description: Job description text
+            section_key: Section name ('professional_summary', 'technical_skills', 'experiences')
+            top_k: Number of top resumes to return
+            resume_ids_filter: Optional list of resume_ids to filter results
+            semantic_weight: Weight for semantic similarity (default 0.7)
+            keyword_weight: Weight for keyword matching (default 0.3)
+            
+        Returns:
+            List of (resume_id, hybrid_score) tuples sorted by score descending
+        """
+        if section_key not in self.collections_mapping:
+            raise ValueError(f"Invalid section_key: {section_key}. Must be one of {list(self.collections_mapping.keys())}")
+        
+        collection_name = self.collections_mapping[section_key]
+        
+        # Embed job description
+        jd_vecs = self.embedding_service.encode_texts([job_description])
+        if not jd_vecs or len(jd_vecs) == 0:
+            raise QdrantError("Failed to embed job description")
+        jd_vector = jd_vecs[0]
+        
+        # Semantic search on this collection only
+        search_results = self._search_collection(
+            collection_name,
+            jd_vector,
+            top_k=top_k * 5,  # Get more candidates for keyword re-ranking
+            resume_ids_filter=resume_ids_filter
+        )
+        
+        if not search_results:
+            logger.warning(f"No results found for section '{section_key}'")
+            return []
+        
+        # Extract unique resume IDs and their semantic scores
+        resume_semantic_scores = {}
+        for result in search_results:
+            rid = result.get("resume_id")
+            score = result.get("score", 0.0)
+            if rid:
+                # Take max score if multiple chunks per resume
+                if rid not in resume_semantic_scores or score > resume_semantic_scores[rid]:
+                    resume_semantic_scores[rid] = score
+        
+        resume_ids = list(resume_semantic_scores.keys())
+        
+        # Extract keywords from job description
+        jd_keywords = set(self._extract_keywords_from_text(job_description))
+        
+        if not jd_keywords:
+            logger.warning("No keywords extracted from job description")
+            # Return semantic-only results
+            sorted_results = sorted(
+                resume_semantic_scores.items(),
+                key=lambda x: x[1],
+                reverse=True
+            )
+            return sorted_results[:top_k]
+        
+        logger.info(f"Extracted {len(jd_keywords)} keywords for section '{section_key}'")
+        
+        # Calculate keyword matches for this section only
+        resume_keyword_scores = {}
+        for rid in resume_ids:
+            # Fetch payloads for this resume and section
+            resume_keywords = set()
+            
+            flt = qmodels.Filter(
+                must=[qmodels.FieldCondition(key="resume_id", match=qmodels.MatchValue(value=rid))]
+            )
+            
+            try:
+                points, _ = self.client.scroll(
+                    collection_name=collection_name,
+                    with_payload=True,
+                    with_vectors=False,
+                    scroll_filter=flt,
+                    limit=1000
+                )
+                
+                for point in points:
+                    payload = point.payload or {}
+                    keywords = payload.get("keywords", [])
+                    resume_keywords.update(keywords)
+                
+                # Calculate match percentage
+                if jd_keywords:
+                    matched_keywords = jd_keywords.intersection(resume_keywords)
+                    match_percentage = len(matched_keywords) / len(jd_keywords)
+                else:
+                    match_percentage = 0.0
+                
+                resume_keyword_scores[rid] = match_percentage
+                
+            except Exception as e:
+                logger.warning(f"Failed to fetch keywords for resume {rid} in section '{section_key}': {e}")
+                resume_keyword_scores[rid] = 0.0
+        
+        # Combine semantic and keyword scores
+        hybrid_scores = {}
+        for rid in resume_ids:
+            semantic_score = resume_semantic_scores.get(rid, 0.0)
+            keyword_score = resume_keyword_scores.get(rid, 0.0)
+            
+            hybrid_score = (semantic_weight * semantic_score) + (keyword_weight * keyword_score)
+            hybrid_scores[rid] = hybrid_score
+            
+            logger.debug(f"Section '{section_key}' - Resume {rid}: semantic={semantic_score:.3f}, keyword={keyword_score:.3f}, hybrid={hybrid_score:.3f}")
+        
+        # Sort by hybrid score and return top_k
+        sorted_results = sorted(
+            hybrid_scores.items(),
+            key=lambda x: x[1],
+            reverse=True
+        )
+        
+        logger.info(f"Section '{section_key}': Returning top {top_k} from {len(sorted_results)} candidates")
+        return sorted_results[:top_k]
     def fetch_all_payloads_for_resume_ids(self, resume_ids: List[str]) -> Dict[str, Dict[str, List[Dict]]]:
         """
         Fetch all payload entries for given resume_ids across all collections.
@@ -933,7 +1088,7 @@ class QdrantManager:
                         collection_name=collection_name,
                         with_payload=True,
                         with_vectors=False,
-                        filter=flt,
+                        scroll_filter=flt,
                         limit=1000
                     )
                     for p in points:
@@ -990,7 +1145,7 @@ class QdrantManager:
                     collection_name=collection_name,
                     with_payload=True,
                     with_vectors=False,
-                    filter=flt,
+                    scroll_filter=flt,
                     limit=10000  # Adjust if needed
                 )
                 
