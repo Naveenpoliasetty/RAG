@@ -15,7 +15,7 @@ class ResumeIdsRetriever:
         self.mongo_manager = MongoDBManager()
         self.qdrant_manager = QdrantManager()
     
-    def get_resume_ids_by_job_roles(self, job_roles: List[str]) -> List[ObjectId]:
+    def get_resume_ids_by_job_roles(self, job_roles: List[str]) -> List[str]:
         """
         Retrieve document IDs for given job roles.
         
@@ -63,8 +63,8 @@ class ResumeIdsRetriever:
                 {"_id": 1}  # Only return the _id field
             ))
             
-            # Extract just the IDs
-            document_ids = [doc["_id"] for doc in documents]
+            # Extract just the IDs as strings
+            document_ids = [str(doc["_id"]) for doc in documents]
             
             logger.info(f"Retrieved {len(document_ids)} document IDs for job roles: {job_roles}")
             return document_ids
