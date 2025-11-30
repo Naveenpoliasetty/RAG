@@ -21,8 +21,7 @@ router = APIRouter()
 
 SYSTEM_PROMPT = """
 You are a professional resume parser.
-
-Your task is to extract and structure information from an unstructured resume text according to the JSON schema provided separately in the system or developer context.
+tely in the system or developer context.
 
 Follow these rules:
 
