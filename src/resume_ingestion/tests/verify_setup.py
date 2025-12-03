@@ -8,7 +8,7 @@ def verify_mongodb_setup():
         
         # Test connection
         client.admin.command('ping')
-        print("✅ MongoDB connection successful")
+        print(" MongoDB connection successful")
         
         db = client["resumes_db"]
         
@@ -17,7 +17,7 @@ def verify_mongodb_setup():
         # Check database exists
         db_names = client.list_database_names()
         if "resumes_db" in db_names:
-            print("✅ Database 'resumes_db' exists")
+            print(" Database 'resumes_db' exists")
         else:
             print("❌ Database 'resumes_db' not found")
             return False
@@ -25,7 +25,7 @@ def verify_mongodb_setup():
         # Check collection exists
         collection_names = db.list_collection_names()
         if "resumes" in collection_names:
-            print("✅ Collection 'resumes' exists")
+            print(" Collection 'resumes' exists")
         else:
             print("❌ Collection 'resumes' not found")
             return False
@@ -38,7 +38,7 @@ def verify_mongodb_setup():
         
         for index in expected_indexes:
             if index in indexes:
-                print(f"✅ Index '{index}' exists")
+                print(f" Index '{index}' exists")
             else:
                 print(f"❌ Index '{index}' not found")
         
@@ -48,7 +48,7 @@ def verify_mongodb_setup():
         
         test_doc = db.resumes.find_one({"_id": "test-resume-001"})
         if test_doc:
-            print("✅ Test document found")
+            print(" Test document found")
             print(f"   Category: {test_doc.get('category')}")
             print(f"   Status: {test_doc.get('qdrant_status')}")
         else:
@@ -73,7 +73,7 @@ def verify_mongodb_setup():
                 ],
                 "skills": ["Python", "Testing", "Docker"]
             })
-            print("✅ Test document inserted")
+            print(" Test document inserted")
         
         client.close()
         return True

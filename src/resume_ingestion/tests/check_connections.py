@@ -38,7 +38,7 @@ def check_mongodb_connection() -> Dict[str, Any]:
         # Health check
         if mongo.health_check():
             result["connected"] = True
-            result["status"] = "✅ Connected"
+            result["status"] = " Connected"
             result["database"] = mongo.db.name
             result["collection"] = mongo.collection.name
             result["uri"] = str(mongo.client.address)
@@ -91,7 +91,7 @@ def check_qdrant_connection() -> Dict[str, Any]:
         # Health check
         if qdrant.health_check():
             result["connected"] = True
-            result["status"] = "✅ Connected"
+            result["status"] = " Connected"
             result["host"] = config.qdrant_host
             result["port"] = config.qdrant_port
             
@@ -203,13 +203,13 @@ def main():
     print("\n" + "="*60)
     print("📋 SUMMARY")
     print("="*60)
-    mongodb_ok = "✅" if mongodb_status["connected"] else "❌"
-    qdrant_ok = "✅" if qdrant_status["connected"] else "❌"
+    mongodb_ok = "" if mongodb_status["connected"] else "❌"
+    qdrant_ok = "" if qdrant_status["connected"] else "❌"
     print(f"MongoDB: {mongodb_ok}")
     print(f"Qdrant: {qdrant_ok}")
     
     if mongodb_status["connected"] and qdrant_status["connected"]:
-        print("\n✅ All connections are healthy!")
+        print("\n All connections are healthy!")
         return 0
     else:
         print("\n⚠️  Some connections failed. Check the details above.")

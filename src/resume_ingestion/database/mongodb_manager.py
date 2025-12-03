@@ -18,11 +18,14 @@ class MongoDBManager:
         self.collection = self.db[config.mongodb_collection]
         self.batch_size = config.get('mongodb.batch_size', 50)
 
-    def claim_document(self, doc_id: ObjectId) -> Optional[dict]:
-        """Atomically claim a document for processing."""
+    def claim_document(self, doc_id) -> Optional[dict]:
+        """
+        Atomically claim a document for processing.
+        Uses resume_id field for querying.
+        """
         try:
             return self.collection.find_one_and_update(
-                {"_id": doc_id, "qdrant_status": {"$nin": ["processing", "ingested"]}},
+                {"resume_id": doc_id, "qdrant_status": {"$nin": ["processing", "ingested"]}},
                 {"$set": {"qdrant_status": "processing", "processing_started": datetime.now(timezone.utc)}},
                 return_document=ReturnDocument.AFTER,
             )
@@ -42,11 +45,14 @@ class MongoDBManager:
             logger.error(f"Error fetching pending documents: {e}")
             return []
 
-    def mark_as_ingested(self, doc_id: ObjectId) -> bool:
-        """Mark document as successfully ingested."""
+    def mark_as_ingested(self, doc_id) -> bool:
+        """
+        Mark document as successfully ingested.
+        Uses resume_id field for querying.
+        """
         try:
             result = self.collection.update_one(
-                {"_id": doc_id},
+                {"resume_id": doc_id},
                 {"$set": {
                     "qdrant_status": "ingested", 
                     "ingested_at": datetime.now(timezone.utc),
@@ -58,11 +64,14 @@ class MongoDBManager:
             logger.error(f"Error marking document {doc_id} as ingested: {e}")
             return False
 
-    def mark_batch_ingested(self, doc_ids: List[ObjectId]) -> bool:
-        """Mark multiple documents as ingested."""
+    def mark_batch_ingested(self, doc_ids: List) -> bool:
+        """
+        Mark multiple documents as ingested.
+        Uses resume_id field for querying.
+        """
         try:
             result = self.collection.update_many(
-                {"_id": {"$in": doc_ids}},
+                {"resume_id": {"$in": doc_ids}},
                 {"$set": {
                     "qdrant_status": "ingested",
                     "ingested_at": datetime.now(timezone.utc),
@@ -75,13 +84,16 @@ class MongoDBManager:
             logger.error(f"Error marking batch as ingested: {e}")
             return False
 
-    def mark_as_failed(self, doc_id: ObjectId, error: str) -> bool:
-        """Mark document as failed."""
+    def mark_as_failed(self, doc_id, error: str) -> bool:
+        """
+        Mark document as failed.
+        Uses resume_id field for querying.
+        """
         try:
             result = self.collection.update_one(
-                {"_id": doc_id},
+                {"resume_id": doc_id},
                 {"$set": {
-                    "qdrant_status": "failed", 
+                    "qdrant_status": "failed",
                     "error": str(error)[:500],  # Truncate long errors
                     "failed_at": datetime.now(timezone.utc),
                     "last_processed": datetime.now(timezone.utc)
@@ -92,11 +104,14 @@ class MongoDBManager:
             logger.error(f"Error marking document {doc_id} as failed: {e}")
             return False
 
-    def mark_batch_processing(self, doc_ids: List[ObjectId]) -> bool:
-        """Atomically mark a batch of documents as processing."""
+    def mark_batch_processing(self, doc_ids: List) -> bool:
+        """
+        Atomically mark a batch of documents as processing.
+        Uses resume_id field for querying.
+        """
         try:
             result = self.collection.update_many(
-                {"_id": {"$in": doc_ids}, "qdrant_status": {"$nin": ["processing", "ingested"]}},
+                {"resume_id": {"$in": doc_ids}, "qdrant_status": {"$nin": ["processing", "ingested"]}},
                 {"$set": {"qdrant_status": "processing", "processing_started": datetime.now(timezone.utc)}}
             )
             logger.info(f"Marked {result.modified_count} documents as processing")
@@ -167,7 +182,6 @@ class MongoDBManager:
         except PyMongoError as e:
             logger.warning(f"Error closing MongoDB connection: {e}")
 
-
     def get_sections_by_resume_ids(
         self, 
         resume_ids: List[str], 
@@ -177,6 +191,10 @@ class MongoDBManager:
         Fetches only the specified section (e.g., professional_summary)
         for a list of resume IDs.
 
+        Args:
+            resume_ids: List of resume IDs as strings (from Qdrant)
+            section_name: Name of the section to fetch
+            
         Returns a list of dicts:
         [
             { "resume_id": "...", "section": [...] or {...} or None },
@@ -184,12 +202,27 @@ class MongoDBManager:
         ]
         """
         try:
-            # Query by resume_id field instead of _id
-            query = {"_id": {"$in": resume_ids}}
+            # MongoDB accepts both ObjectId and UUID strings directly
+            # So we can use the resume_ids as-is
+            query_ids = []
+            for rid in resume_ids:
+                # Convert to string if needed, but keep as-is for MongoDB query
+                if isinstance(rid, ObjectId):
+                    query_ids.append(rid)
+                else:
+                    # MongoDB accepts UUID strings directly
+                    query_ids.append(rid)
+            
+            if not query_ids:
+                logger.warning(f"No valid IDs found from {len(resume_ids)} resume IDs")
+                return []
+            
+            # Query MongoDB using resume_id field
+            query = {"resume_id": {"$in": query_ids}}
             
             # Only query the resume_id + section_name field
             projection = {
-                "_id": 1,
+                "resume_id": 1,
                 section_name: 1
             }
 
@@ -197,13 +230,30 @@ class MongoDBManager:
                 self.collection.find(query, projection)
             )
 
-            results = []
+            logger.info(f"Found {len(docs)} documents for {len(query_ids)} requested resume IDs in section '{section_name}'")
+            
+            # Create a mapping from resume_id to document
+            results: List[Dict[str, Any]] = []
+            found_ids = set()
+            
             for doc in docs:
-                results.append({  # Use the resume_id field, not _id
-                    f"{section_name}": doc.get(section_name, None)
+                doc_resume_id = doc.get("resume_id")
+                if not doc_resume_id:
+                    logger.warning("Document missing resume_id field, skipping")
+                    continue
+                found_ids.add(str(doc_resume_id))
+                results.append({
+                    section_name: doc.get(section_name, None)
                 })
+            
+            # Log missing documents
+            query_id_strs = set(str(qid) for qid in query_ids)
+            missing_ids = query_id_strs - found_ids
+            if missing_ids:
+                logger.warning(f"Missing {len(missing_ids)} documents in MongoDB for section '{section_name}': {list(missing_ids)[:5]}...")
+            
             return results
 
         except Exception as e:
-            logger.error(f"Error fetching sections for resumes: {e}")
+            logger.error(f"Error fetching sections for resumes: {e}", exc_info=True)
             return []

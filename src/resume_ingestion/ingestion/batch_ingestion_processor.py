@@ -21,39 +21,60 @@ class BatchIngestionProcessor:
     def process_single_document(self, document: Dict[str, Any]) -> bool:
         """
         Process a single MongoDB document and ingest into Qdrant.
+        Uses resume_id field as the primary identifier.
         """
-        doc_id = document.get("_id")
-        if not doc_id:
-            logger.error("Document missing _id field")
+        # Get resume_id
+        resume_id = document.get("resume_id")
+        if not resume_id:
+            logger.error("Document missing resume_id field")
             return False
         
         try:
-            # Convert ObjectId to string for Qdrant
+            # Convert resume_id to string for Qdrant
+            resume_id_str = str(resume_id) if not isinstance(resume_id, str) else resume_id
+            
+            # Ensure document has resume_id field
+            document["resume_id"] = resume_id_str
+            
+            # Prepare document for Qdrant processing
             processed_doc = self._prepare_document(document)
+            
+            # Ensure resume_id is consistent
+            processed_doc["resume_id"] = resume_id_str
+            
+            logger.debug(f"Processing document: resume_id={resume_id_str}")
             
             # Prepare points for Qdrant
             collection_points = self.qdrant_manager.prepare_points_for_resume(processed_doc)
             
             if not collection_points:
-                logger.warning(f"No collection points generated for document {doc_id}")
-                self.mongo_manager.mark_as_failed(doc_id, "No embeddings generated")
+                logger.warning(f"No collection points generated for document {resume_id_str}")
+                self.mongo_manager.mark_as_failed(resume_id_str, "No embeddings generated")
                 return False
+            
+            # Validate that resume_id is consistent in all points
+            total_points = sum(len(points) for points in collection_points.values())
+            logger.info(f"Generated {total_points} points for resume_id={resume_id_str}")
             
             # Upsert to Qdrant
             self.qdrant_manager.upsert_to_qdrant(collection_points)
             
-            # Mark as successful in MongoDB
-            success = self.mongo_manager.mark_as_ingested(doc_id)
+            # Mark as successful in MongoDB using resume_id
+            success = self.mongo_manager.mark_as_ingested(resume_id_str)
             if success:
-                logger.info(f"Successfully processed document {doc_id}")
+                logger.info(f"Successfully processed document resume_id={resume_id_str}")
             else:
-                logger.warning(f"Document {doc_id} processed but couldn't update MongoDB status")
+                logger.warning(f"Document {resume_id_str} processed but couldn't update MongoDB status")
             
             return True
             
         except Exception as e:
-            logger.error(f"Error processing document {doc_id}: {e}")
-            self.mongo_manager.mark_as_failed(doc_id, str(e))
+            logger.error(f"Error processing document {resume_id}: {e}", exc_info=True)
+            # Mark as failed using resume_id
+            try:
+                self.mongo_manager.mark_as_failed(resume_id_str, str(e))
+            except Exception as e2:
+                logger.error(f"Failed to mark document as failed: {e2}")
             return False
     
     def process_batch(self) -> Dict[str, Any]:
@@ -70,7 +91,8 @@ class BatchIngestionProcessor:
             logger.info("No pending documents found")
             return {"processed": 0, "successful": 0, "failed": 0}
         
-        doc_ids = [doc["_id"] for doc in documents]
+        # Extract resume_id from documents
+        doc_ids = [doc.get("resume_id") for doc in documents if doc.get("resume_id")]
         logger.info(f"Found {len(documents)} pending documents")
         
         # Mark batch as processing
@@ -141,19 +163,38 @@ class BatchIngestionProcessor:
     def _prepare_document(self, document: Dict[str, Any]) -> Dict[str, Any]:
         """
         Prepare MongoDB document for Qdrant processing.
-        Converts ObjectId to string and ensures required fields.
+        Ensures resume_id field exists and is a string.
+        Also normalizes job_role for consistency.
         """
         # Create a copy to avoid modifying the original
         processed = document.copy()
         
-        # Convert ObjectId to string
-        if "_id" in processed and isinstance(processed["_id"], ObjectId):
-            processed["_id"] = str(processed["_id"])
+        # Get resume_id
+        resume_id = processed.get("resume_id")
+        if not resume_id:
+            logger.error("Document missing resume_id field")
+            raise ValueError("Document must have resume_id field")
+        
+        # Ensure resume_id is a string
+        resume_id_str = str(resume_id)
+        processed["resume_id"] = resume_id_str
+        
+        # Remove _id if present - Qdrant uses resume_id from payload, not _id
+        processed.pop("_id", None)
+        
+        # Normalize job_role using the same function used elsewhere
+        from src.data_acquisition.parser import normalize_job_role
+        raw_job_role = processed.get("job_role", "").strip()
+        if raw_job_role:
+            processed["job_role"] = normalize_job_role(raw_job_role)
+        else:
+            processed["job_role"] = ""
         
         # Ensure required fields exist
-        processed.setdefault("domain", "")
-        processed.setdefault("job_role", "")
+        processed.setdefault("category", "")
         processed.setdefault("experiences", [])
+        processed.setdefault("professional_summary", [])
+        processed.setdefault("technical_skills", [])
         
         return processed
     

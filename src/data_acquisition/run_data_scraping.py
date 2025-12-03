@@ -55,9 +55,9 @@ class ScrapePipeline:
                 logger.warning(f"Could not extract category from URL: {url}")
             
             # --- Add metadata for MongoDB and tracking ---
-            # Generate a unique ID for MongoDB _id field
+            # Generate a unique ID for resume_id field
             resume_id = str(uuid4())
-            parsed_resume["_id"] = resume_id                    # MongoDB primary key
+            parsed_resume["resume_id"] = resume_id              # Application-level identifier
             parsed_resume["category"] = category
             parsed_resume["source_url"] = url
             parsed_resume["scraped_at"] = datetime.now(timezone.utc)
@@ -119,7 +119,7 @@ class ScrapePipeline:
         for entry in failed_entries:
             # Create a structured failed resume document
             failed_resume = {
-                "_id": str(uuid4()),
+                "resume_id": str(uuid4()),
                 "source_url": entry["url"],
                 "error_type": entry["status"],
                 "error_message": entry["error"],

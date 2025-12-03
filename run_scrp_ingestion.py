@@ -1,12 +1,12 @@
 import subprocess
 
 def run_command(command: str):
-    print(f"\n🚀 Running: {command}\n")
+    print(f"\nRunning: {command}\n")
     result = subprocess.run(command, shell=True)
     if result.returncode != 0:
         print(f"❌ Command failed: {command}")
         exit(result.returncode)
-    print(f"✅ Completed: {command}\n")
+    print(f" Completed: {command}\n")
 
 
 if __name__ == "__main__":

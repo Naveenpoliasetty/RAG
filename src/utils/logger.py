@@ -75,7 +75,7 @@ class ProjectLogger:
         logging.getLogger("selenium").setLevel(logging.WARNING)
         
         logger = logging.getLogger(__name__)
-        logger.info(f"🚀 Logging configured for pipeline: {pipeline_name}")
+        logger.info(f"Logging configured for pipeline: {pipeline_name}")
     
     def get_logger(self, name, pipeline_name=None):
         """Get a logger instance, optionally for specific pipeline."""
@@ -94,4 +94,4 @@ def get_pipeline_logger(name, pipeline_name):
     return project_logger.get_logger(name, pipeline_name)
 
 # Initialize when imported
-get_logger(__name__).info("✅ Logger module loaded")
+get_logger(__name__).info(" Logger module loaded")

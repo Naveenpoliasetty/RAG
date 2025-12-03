@@ -1,9 +1,7 @@
 from typing import List
-from bson import ObjectId
 from pymongo.errors import PyMongoError
 from src.utils.logger import get_logger
-from src.resume_ingestion.database.mongodb_manager import MongoDBManager
-from src.resume_ingestion.vector_store.qdrant_manager import QdrantManager
+from src.core.db_manager import get_mongodb_manager, get_qdrant_manager
 from src.data_acquisition.parser import normalize_job_role
 import json
 
@@ -12,20 +10,36 @@ logger = get_logger("DataRetrieverPipeline")
 
 class ResumeIdsRetriever:
     def __init__(self):
-        self.mongo_manager = MongoDBManager()
-        self.qdrant_manager = QdrantManager()
+        # Use singleton instances
+        self.mongo_manager = get_mongodb_manager()
+        self.qdrant_manager = get_qdrant_manager()
     
     def get_resume_ids_by_job_roles(self, job_roles: List[str]) -> List[str]:
         """
-        Retrieve document IDs for given job roles.
+        Retrieve document IDs for given job roles from MongoDB.
+        Uses consistent normalization to match how data is stored.
         
         Args:
             job_roles: List of job roles to filter by
             
         Returns:
-            List of document ObjectIds
+            List of document IDs as strings (for use with Qdrant)
         """
-        normalized_job_roles = [normalize_job_role(role) for role in job_roles]
+        if not job_roles:
+            logger.warning("Empty job_roles list provided")
+            return []
+        
+        # Normalize job roles using the same function used during ingestion
+        normalized_job_roles = []
+        for role in job_roles:
+            if role and role.strip():
+                normalized = normalize_job_role(role.strip())
+                if normalized:
+                    normalized_job_roles.append(normalized)
+        
+        if not normalized_job_roles:
+            logger.warning("No valid job roles after normalization")
+            return []
         
         # Generate variations for roles with slashes to handle inconsistent DB data
         expanded_roles = set(normalized_job_roles)
@@ -54,23 +68,23 @@ class ResumeIdsRetriever:
                     expanded_roles.add("/ ".join(parts))
 
         search_roles = list(expanded_roles)
-        logger.info(f"Searching for job roles: {search_roles}")
+        logger.info(f"Searching MongoDB for job roles (normalized): {search_roles[:5]}...")
 
         try:
-            # Simple query - just get IDs for the job roles
+            # Query MongoDB - job_role field should be normalized during ingestion
             documents = list(self.mongo_manager.collection.find(
                 {"job_role": {"$in": search_roles}},
-                {"_id": 1}  # Only return the _id field
+                {"resume_id": 1}  # Return only resume_id
             ))
             
-            # Extract just the IDs as strings
-            document_ids = [str(doc["_id"]) for doc in documents]
+            # Extract resume_id as strings
+            document_ids = [str(doc.get("resume_id", "")) for doc in documents if doc.get("resume_id")]
             
-            logger.info(f"Retrieved {len(document_ids)} document IDs for job roles: {job_roles}")
+            logger.info(f"Retrieved {len(document_ids)} document IDs from MongoDB for job roles: {job_roles}")
             return document_ids
             
         except PyMongoError as e:
-            logger.error(f"Error retrieving document IDs for job roles {job_roles}: {e}")
+            logger.error(f"Error retrieving document IDs for job roles {job_roles}: {e}", exc_info=True)
             return []
 
     def generate_candidate_pool_and_contents(self, job_description: str, top_k_resume=10):

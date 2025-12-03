@@ -10,7 +10,7 @@ def reset_documents_for_testing():
         {"$set": {"qdrant_status": "pending"}}
     )
     
-    print(f"✅ Reset {result.modified_count} documents to 'pending' status")
+    print(f" Reset {result.modified_count} documents to 'pending' status")
     
     # Verify
     pending_count = mongo.collection.count_documents({"qdrant_status": "pending"})

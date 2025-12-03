@@ -64,7 +64,7 @@ def test_section_search():
         print(f"      {i}. {rid[:16]}... (score: {score:.4f})")
     
     print("\n" + "="*80)
-    print("✅ SECTION-LEVEL HYBRID SEARCH WORKING!")
+    print(" SECTION-LEVEL HYBRID SEARCH WORKING!")
     print("="*80)
     print("\nKey observations:")
     print("- Each section can return DIFFERENT resumes (by design!)")

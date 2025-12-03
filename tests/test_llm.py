@@ -53,7 +53,7 @@ def test_endpoint_connectivity():
         # Try a simple GET request to check connectivity
         try:
             response = requests.get(test_url, timeout=5)
-            print(f"✅ Endpoint is reachable (Status: {response.status_code})")
+            print(f" Endpoint is reachable (Status: {response.status_code})")
             return True
         except requests.exceptions.RequestException as e:
             print(f"⚠️  Could not verify connectivity: {str(e)}")
@@ -100,7 +100,7 @@ def test_basic_chat_completion():
         response = client.chat.completions.create(**request_data)
         elapsed_time = time.time() - start_time
         
-        print(f"\n✅ Success! Response received in {elapsed_time:.2f} seconds")
+        print(f"\n Success! Response received in {elapsed_time:.2f} seconds")
         print(f"\nResponse:")
         print("-" * 70)
         print(response.choices[0].message.content)
@@ -202,7 +202,7 @@ def test_structured_output():
         response = client.chat.completions.create(**request_params)
         elapsed_time = time.time() - start_time
         
-        print(f"\n✅ Success! Structured output received in {elapsed_time:.2f} seconds")
+        print(f"\n Success! Structured output received in {elapsed_time:.2f} seconds")
         print(f"\nStructured Response:")
         print("-" * 70)
         print(response.model_dump_json(indent=2))
@@ -282,7 +282,7 @@ def main():
     print_section("Test Summary")
     print("\nResults:")
     for test_name, passed in results:
-        status = "✅ PASSED" if passed else "❌ FAILED"
+        status = " PASSED" if passed else "❌ FAILED"
         print(f"  {test_name:30s} {status}")
     
     total_passed = sum(1 for _, passed in results if passed)

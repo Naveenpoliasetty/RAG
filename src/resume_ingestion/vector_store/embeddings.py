@@ -1,8 +1,11 @@
+import os
+# Suppress Hugging Face tokenizers parallelism warning
+os.environ["TOKENIZERS_PARALLELISM"] = "false"
+
 from sentence_transformers import SentenceTransformer
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from src.core.settings import config
 from typing import List, Optional
-from resume_ingestion.vector_store.qdrant_manager import needs_splitter
 from src.utils.logger import get_logger
 
 logger = get_logger("ReliableBatchWorker")
@@ -71,8 +74,8 @@ class EmbeddingService:
         if not text:
             return []
 
-        # Use token-based decision for splitting
-        if not needs_splitter(text, model_name=self._get_model_from_config(), embedding_dim=self.get_vector_size()):
+        # Simple heuristic: if text is shorter than 2x chunk size, don't split
+        if len(text) <= self.chunk_size * 2:
             return [text]
 
         # Otherwise, perform recursive splitting

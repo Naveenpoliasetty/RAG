@@ -82,7 +82,7 @@ def main():
         try:
             response = client.chat.completions.create(**request_params)
             
-            print("\n✅ SUCCESS!")
+            print("\n SUCCESS!")
             print(f"Response: {response.choices[0].message.content}")
             if response.usage:
                 print(f"Tokens used: {response.usage.total_tokens}")

@@ -9,6 +9,7 @@ from qdrant_client.http import models as qmodels
 from qdrant_client.http.exceptions import UnexpectedResponse, ApiException
 from src.core.settings import config
 from src.utils.logger import get_logger
+from src.resume_ingestion.vector_store.embeddings import create_embedding_service
 
 # Import your keyword extractor
 from src.utils.keyword_extraction import extract_keywords
@@ -21,68 +22,12 @@ class QdrantError(Exception):
     pass
 
 
-def estimate_token_count(text: str) -> int:
-    """
-    Roughly estimate token count.
-    Works well enough for deciding splitting thresholds.
-    """
-    if not text:
-        return 0
-    
-    # Split on spaces and punctuation as approximate tokenization
-    tokens = re.findall(r"\b\w+\b", text)
-    return len(tokens)
-
-
-def needs_splitter(
-    text: str,
-    model_name: Optional[str] = None,
-    embedding_dim: Optional[int] = None,
-    safety_margin: float = 0.8
-) -> bool:
-    """
-    Decide whether text should be split based on model token limits.
-    """
-    text = text.strip()
-    if not text:
-        return False
-
-    # Define known model token capacities
-    model_token_limits = {
-        "intfloat/e5-base-v2": 512,
-        "sentence-transformers/all-mpnet-base-v2": 512,
-        "sentence-transformers/all-MiniLM-L6-v2": 256,
-        "e5-large-v2": 512,
-        "text-embedding-3-small": 8191,
-        "text-embedding-3-large": 8191
-    }
-
-    # Get max tokens
-    if model_name in model_token_limits:
-        max_tokens = model_token_limits[model_name]
-    elif embedding_dim == 768:
-        max_tokens = 512
-    elif embedding_dim == 384:
-        max_tokens = 256
-    elif embedding_dim == 1536:
-        max_tokens = 8191
-    else:
-        max_tokens = 512  # safe default
-
-    safe_limit = int(max_tokens * safety_margin)
-    est_tokens = estimate_token_count(text)
-
-    return est_tokens > safe_limit
-
-
 class QdrantManager:
     """
     QdrantManager with keyword extraction and matching capabilities.
     """
 
     def __init__(self):
-        # Lazy import to avoid circular dependency with embeddings module
-        from resume_ingestion.vector_store.embeddings import create_embedding_service
         self.embedding_service = create_embedding_service()
         self.collections_mapping = getattr(config, "collections", {})
 
@@ -101,10 +46,11 @@ class QdrantManager:
     # ---------------------------------------------------------------------
     # Qdrant Initialization
     # ---------------------------------------------------------------------
-
-    def _initialize_client(self, max_retries: int = 3) -> QdrantClient:
+    def _initialize_client(self, max_retries: int = 5) -> QdrantClient:
         """Initialize Qdrant client with retry logic."""
         timeout = self._get_config_timeout()
+        
+        logger.info(f"Connecting to Qdrant at {config.qdrant_host}:{config.qdrant_port}")
 
         for attempt in range(max_retries):
             try:
@@ -116,7 +62,8 @@ class QdrantManager:
                 client.get_collections()  # Test connection
                 logger.info("Successfully connected to Qdrant")
                 return client
-            except (UnexpectedResponse, ApiException, ConnectionError, TimeoutError) as e:
+            except (UnexpectedResponse, ApiException, ConnectionError, TimeoutError, OSError) as e:
+                # OSError catches httpcore.ConnectError and httpx.ConnectError
                 logger.warning(f"Qdrant connection attempt {attempt + 1}/{max_retries} failed: {e}")
                 if attempt == max_retries - 1:
                     raise QdrantError(f"Failed to connect to Qdrant after {max_retries} attempts: {e}")
@@ -153,7 +100,7 @@ class QdrantManager:
                 logger.error(f"Error with collection '{collection_name}': {e}")
                 raise
 
-    def _create_collection_with_payload_schema(self, collection_name: str, max_retries: int = 3):
+    def _create_collection_with_payload_schema(self, collection_name: str, max_retries: int = 5):
         """Create a collection with proper payload schema configuration."""
         vector_size = self.embedding_service.get_vector_size()
 
@@ -213,7 +160,7 @@ class QdrantManager:
                     # Index might already exist, which is fine
                     logger.debug(f"Payload index for '{field_name}' might already exist: {e}")
             
-            logger.info(f"✅ Configured payload schema for '{collection_name}'")
+            logger.info(f" Configured payload schema for '{collection_name}'")
             
         except Exception as e:
             logger.warning(f"Could not configure payload schema for '{collection_name}': {e}")
@@ -282,22 +229,36 @@ class QdrantManager:
         """
         Convert a structured resume into embedding points with proper payload schema.
         Experiences are kept as cohesive chunks (each experience as one or more chunks).
+        
+        Ensures resume_id is always stored as a string (converted from ObjectId if needed).
         """
         if not doc:
             logger.warning("Received empty resume document.")
             return {}
 
         try:
-            resume_id = str(doc.get("_id", uuid.uuid4()))
+            # Get resume_id field
+            resume_id = doc.get("resume_id")
+            if resume_id is None:
+                resume_id = str(uuid.uuid4())
+                logger.warning(f"Document missing resume_id, generated UUID: {resume_id}")
+            else:
+                # Convert to string (handles ObjectId, str, etc.)
+                resume_id = str(resume_id)
+            
+            # Normalize job_role using the same function used in MongoDB
+            from src.data_acquisition.parser import normalize_job_role
+            raw_job_role = doc.get("job_role", "").strip()
+            job_role = normalize_job_role(raw_job_role) if raw_job_role else ""
+            
             domain = doc.get("category", "").lower().strip()
-            job_role = doc.get("job_role", "").strip()
             
             if not resume_id:
                 logger.warning("Generated empty resume_id")
                 return {}
                 
         except Exception as e:
-            logger.error(f"Error processing document metadata: {e}")
+            logger.error(f"Error processing document metadata: {e}", exc_info=True)
             return {}
 
         logger.info(f"Processing resume {resume_id} (domain={domain}, role={job_role})")
@@ -548,14 +509,15 @@ class QdrantManager:
     # Upsert Logic
     # ---------------------------------------------------------------------
 
-    def upsert_to_qdrant(self, collection_points: Dict[str, List[Dict]], max_retries: int = 3):
+    def upsert_to_qdrant(self, collection_points: Dict[str, List[Dict]], max_retries: int = 5):
         """Upsert points with proper error handling and batch processing."""
         if not collection_points:
             logger.warning("No points to upsert")
             return
 
         total_upserted = 0
-        batch_size = 100  # Qdrant recommended batch size
+        total_upserted = 0
+        batch_size = config.get("processing.batch_size", 100)
 
         for collection_name, points in collection_points.items():
             if not points:
@@ -570,7 +532,7 @@ class QdrantManager:
                 batch_upserted = self._upsert_batch_with_retry(collection_name, batch, max_retries)
                 total_upserted += batch_upserted
 
-        logger.info(f"✅ Upsert completed: {total_upserted} total points across all collections")
+        logger.info(f" Upsert completed: {total_upserted} total points across all collections")
 
     def _upsert_batch_with_retry(self, collection_name: str, batch: List[Dict], max_retries: int) -> int:
         """Upsert a single batch with retry logic."""
@@ -588,7 +550,7 @@ class QdrantManager:
                 )
                 
                 if result.status == 'completed':
-                    logger.debug(f"✅ Batch of {len(point_structs)} points upserted to '{collection_name}'")
+                    logger.debug(f" Batch of {len(point_structs)} points upserted to '{collection_name}'")
                     return len(point_structs)
                 else:
                     logger.warning(f"Upsert status not completed: {result.status}")
@@ -692,37 +654,7 @@ class QdrantManager:
         
         return match_results
 
-    def get_best_keyword_matches(
-        self,
-        job_description: str,
-        resume_ids: List[str],
-        top_k: Optional[int] = None
-    ) -> List[Tuple[str, float]]:
-        """
-        Get resumes sorted by keyword match percentage.
-        
-        Args:
-            job_description: Job description text
-            resume_ids: List of resume IDs to check
-            top_k: Number of top matches to return (None for all)
-            
-        Returns:
-            List of (resume_id, match_percentage) sorted by best match
-        """
-        match_percentages = self.calculate_keyword_match_percentage(job_description, resume_ids)
-        
-        # Sort by match percentage (descending)
-        sorted_matches = sorted(
-            match_percentages.items(),
-            key=lambda x: x[1],
-            reverse=True
-        )
-        
-        # Return top_k if specified
-        if top_k is not None:
-            return sorted_matches[:top_k]
-        
-        return sorted_matches
+
 
     # ---------------------------------------------------------------------
     # Query and Management Utilities
@@ -752,19 +684,52 @@ class QdrantManager:
             logger.error(f"Failed to get info for collection '{collection_name}': {e}")
             return None
 
-    def get_payload_sample(self, collection_name: str, limit: int = 5) -> List[Dict]:
-        """Get sample payloads from a collection for debugging."""
+    def _check_resume_ids_exist(self, collection_name: str, resume_ids_sample: List[str]) -> bool:
+        """
+        Check if any of the sample resume IDs exist in the collection.
+        
+        Args:
+            collection_name: Name of the collection to check
+            resume_ids_sample: Sample list of resume IDs to check
+            
+        Returns:
+            True if at least one resume ID exists in the collection, False otherwise
+        """
+        if not resume_ids_sample:
+            return False
+            
         try:
+            # Create filter for the sample resume IDs
+            flt = qmodels.Filter(
+                must=[
+                    qmodels.FieldCondition(
+                        key="resume_id",
+                        match=qmodels.MatchAny(any=resume_ids_sample)
+                    )
+                ]
+            )
+            
+            # Try to scroll with limit 1 to check if any points exist
             points, _ = self.client.scroll(
                 collection_name=collection_name,
-                limit=limit,
-                with_payload=True,
-                with_vectors=False
+                with_payload=False,
+                with_vectors=False,
+                scroll_filter=flt,
+                limit=1
             )
-            return [point.payload for point in points]
+            
+            found = len(points) > 0
+            if found:
+                logger.debug(f"At least one resume ID from sample found in collection '{collection_name}'")
+            else:
+                logger.debug(f"No resume IDs from sample found in collection '{collection_name}'")
+            
+            return found
+            
         except Exception as e:
-            logger.error(f"Failed to get payload sample from '{collection_name}': {e}")
-            return []
+            logger.error(f"Error checking resume IDs in collection '{collection_name}': {e}")
+            return False
+
 
     # ----------------------------
     # Resume matching & retrieval
@@ -838,11 +803,20 @@ class QdrantManager:
             keyword_weight: Weight for keyword match score (default 0.3)
         """
         if weights is None:
-            weights = {
-                "technical_skills": 0.4,
-                "experiences": 0.3,
-                "professional_summary": 0.3
-            }
+            # Default weights - distribute evenly if not specified
+            num_collections = len(self.collections_mapping)
+            default_weight = 1.0 / num_collections if num_collections > 0 else 0.0
+            weights = {k: default_weight for k in self.collections_mapping.keys()}
+            
+            # Apply specific defaults if keys exist
+            if "technical_skills" in weights: weights["technical_skills"] = 0.4
+            if "experiences" in weights: weights["experiences"] = 0.3
+            if "professional_summary" in weights: weights["professional_summary"] = 0.3
+            
+            # Normalize if we set specific defaults
+            total_weight = sum(weights.values())
+            if total_weight > 0:
+                weights = {k: v / total_weight for k, v in weights.items()}
 
         # embed job description
         jd_vecs = self.embedding_service.encode_texts([job_description])
@@ -897,11 +871,19 @@ class QdrantManager:
             skills_score = agg(s["skills_scores"])
             exp_score = agg(s["experience_scores"])
 
-            semantic_score = (
-                weights.get("professional_summary", 0.0) * summary_score +
-                weights.get("technical_skills", 0.0) * skills_score +
-                weights.get("experiences", 0.0) * exp_score
-            )
+            semantic_score = 0.0
+            for key, weight in weights.items():
+                if key == "professional_summary":
+                    semantic_score += weight * summary_score
+                elif key == "technical_skills":
+                    semantic_score += weight * skills_score
+                elif key == "experiences":
+                    semantic_score += weight * exp_score
+                else:
+                    # Handle custom sections dynamically
+                    # For now, we don't have a specific score list for them in resume_signals structure
+                    # This would need extending resume_signals to be more dynamic too
+                    pass
 
             aggregated[rid] = {
                 "semantic_score": float(semantic_score),
@@ -957,7 +939,7 @@ class QdrantManager:
             job_description: Job description text
             section_key: Section name ('professional_summary', 'technical_skills', 'experiences')
             top_k: Number of top resumes to return
-            resume_ids_filter: Optional list of resume_ids to filter results
+            resume_ids_filter: Optional list of resume_ids to filter results (as strings)
             semantic_weight: Weight for semantic similarity (default 0.7)
             keyword_weight: Weight for keyword matching (default 0.3)
             
@@ -968,6 +950,19 @@ class QdrantManager:
             raise ValueError(f"Invalid section_key: {section_key}. Must be one of {list(self.collections_mapping.keys())}")
         
         collection_name = self.collections_mapping[section_key]
+        
+        # Validate and normalize resume_ids_filter
+        if resume_ids_filter:
+            # Ensure all IDs are strings
+            resume_ids_filter = [str(rid) for rid in resume_ids_filter if rid]
+            logger.info(f"Filtering section '{section_key}' search to {len(resume_ids_filter)} resume IDs")
+            
+            # Check if collection has any points with these resume_ids
+            if resume_ids_filter:
+                sample_check = self._check_resume_ids_exist(collection_name, resume_ids_filter[:10])
+                if not sample_check:
+                    logger.warning(f"None of the first 10 resume IDs found in collection '{collection_name}'. "
+                                 f"This may indicate a mismatch between MongoDB and Qdrant.")
         
         # Embed job description
         jd_vecs = self.embedding_service.encode_texts([job_description])
@@ -985,6 +980,9 @@ class QdrantManager:
         
         if not search_results:
             logger.warning(f"No results found for section '{section_key}'")
+            if resume_ids_filter:
+                logger.warning(f"  Filtered by {len(resume_ids_filter)} resume IDs. "
+                             f"Check if these IDs exist in Qdrant collection '{collection_name}'")
             return []
         
         # Extract unique resume IDs and their semantic scores
@@ -1071,6 +1069,7 @@ class QdrantManager:
         
         logger.info(f"Section '{section_key}': Returning top {top_k} from {len(sorted_results)} candidates")
         return sorted_results[:top_k]
+
     def fetch_all_payloads_for_resume_ids(self, resume_ids: List[str]) -> Dict[str, Dict[str, List[Dict]]]:
         """
         Fetch all payload entries for given resume_ids across all collections.
@@ -1105,7 +1104,7 @@ class QdrantManager:
         Get all unique resume_ids that match any of the given job roles.
         
         Args:
-            job_roles: List of job role strings to search for (case-sensitive matching)
+            job_roles: List of job role strings to search for
             
         Returns:
             List of unique resume_ids that have any of the specified job roles
@@ -1114,14 +1113,26 @@ class QdrantManager:
             logger.warning("Empty job_roles list provided")
             return []
         
-        # Clean and validate job roles
-        cleaned_job_roles = [role.strip() for role in job_roles if role and role.strip()]
+        # Import normalize_job_role for consistent normalization
+        from src.data_acquisition.parser import normalize_job_role
         
-        if not cleaned_job_roles:
-            logger.warning("No valid job roles after cleaning")
+        # Normalize job roles to match how they're stored in Qdrant
+        normalized_roles = []
+        for role in job_roles:
+            if role and role.strip():
+                normalized = normalize_job_role(role.strip())
+                if normalized:
+                    normalized_roles.append(normalized)
+        
+        # Also include original roles (case-insensitive) for broader matching
+        # This handles cases where normalization might differ slightly
+        all_search_roles = list(set(normalized_roles + [r.strip().lower() for r in job_roles if r and r.strip()]))
+        
+        if not all_search_roles:
+            logger.warning("No valid job roles after normalization")
             return []
         
-        logger.info(f"Searching for resumes with job roles: {cleaned_job_roles}")
+        logger.info(f"Searching for resumes with job roles (normalized): {all_search_roles[:5]}...")
         
         # Use MatchAny to find resumes matching any of the job roles
         # We'll search across all collections and collect unique resume_ids
@@ -1130,12 +1141,13 @@ class QdrantManager:
         for key, collection_name in self.collections_mapping.items():
             try:
                 # Create filter for job_role matching any of the provided roles
-                # Note: MatchAny does exact matching, so job_roles should match stored values
+                # Use MatchText for case-insensitive matching, or MatchAny for exact
+                # Try both approaches to catch all variations
                 flt = qmodels.Filter(
                     must=[
                         qmodels.FieldCondition(
                             key="job_role",
-                            match=qmodels.MatchAny(any=cleaned_job_roles)
+                            match=qmodels.MatchAny(any=all_search_roles)
                         )
                     ]
                 )
@@ -1154,7 +1166,8 @@ class QdrantManager:
                     payload = point.payload or {}
                     resume_id = payload.get("resume_id")
                     if resume_id:
-                        resume_ids_set.add(resume_id)
+                        # Ensure resume_id is a string
+                        resume_ids_set.add(str(resume_id))
                 
                 logger.debug(f"Found {len(resume_ids_set)} unique resume_ids from '{collection_name}' collection")
                 
@@ -1163,7 +1176,7 @@ class QdrantManager:
                 continue
         
         resume_ids_list = list(resume_ids_set)
-        logger.info(f"Found {len(resume_ids_list)} unique resume_ids matching job roles: {cleaned_job_roles}")
+        logger.info(f"Found {len(resume_ids_list)} unique resume_ids matching job roles")
         
         return resume_ids_list
 
@@ -1212,6 +1225,7 @@ class QdrantManager:
         logger.info(f"Final output blocks: {output_blocks}")
         return output_blocks
 
+
     def close(self):
         """Close Qdrant connection."""
         try:
@@ -1220,9 +1234,3 @@ class QdrantManager:
                 logger.info("Qdrant client closed.")
         except Exception as e:
             logger.warning(f"Error closing Qdrant client: {e}")
-
-    def __enter__(self):
-        return self
-
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        self.close()

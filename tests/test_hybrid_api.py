@@ -36,7 +36,7 @@ Excellent communication and problem-solving skills.
         # Using default weights: semantic_weight=0.7, keyword_weight=0.3
     )
     
-    print("✅ Test completed successfully!")
+    print(" Test completed successfully!")
     print(f"Result keys: {result.keys()}")
     
     # Test with custom weights
@@ -48,7 +48,7 @@ Excellent communication and problem-solving skills.
         semantic_weight=0.5,
         keyword_weight=0.5
     )
-    print("✅ Custom weights test completed successfully!")
+    print(" Custom weights test completed successfully!")
 
 if __name__ == "__main__":
     asyncio.run(test_hybrid_search_in_api())

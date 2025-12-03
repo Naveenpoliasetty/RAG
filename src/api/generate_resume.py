@@ -2,7 +2,7 @@ from fastapi import APIRouter, File, Form, UploadFile
 from fastapi.responses import JSONResponse
 import json
 import os
-from src.generation.resume_generator import orchestrate_resume_generation
+from src.generation.resume_generator import orchestrate_resume_generation_individual_experiences
 from src.utils.logger import get_logger
 
 from src.api.parser_resume import doc_to_text, parse_resume
@@ -68,17 +68,17 @@ async def generate_resume_endpoint(
             )
         
         # Generate resume sections using job_roles (related_jobs) with hybrid search
-        result = await orchestrate_resume_generation(
+        result = await orchestrate_resume_generation_individual_experiences(
             job_description, 
-            parsed_related_jobs,
+            job_roles=parsed_related_jobs,
+            num_experiences=experience_count,
             semantic_weight=semantic_weight,
-            keyword_weight=keyword_weight,
-            experience_count=experience_count
+            keyword_weight=keyword_weight
         )
         with open("result.json", "w") as f:
             json.dump(result, f, indent=4)
         with open("resume_text.json", "w") as f:
-            json.dump(resume_text, f, indent=4)
+            json.dump(resume_dict, f, indent=4)
         return JSONResponse(content=result)
     except Exception as e:
         logger.error(f"Error generating resume: {str(e)}")

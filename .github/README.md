@@ -1,4 +1,4 @@
-# 🚀 CI/CD Pipeline Documentation
+# CI/CD Pipeline Documentation
 
 ## Overview
 
@@ -9,20 +9,23 @@ This repository uses GitHub Actions for automated testing and deployment to GCP 
 ### 1. **Deploy to GCP VM** (`deploy.yml`)
 
 **Triggers:**
+
 - Push to `main` branch
 - Push to `pipelines/data_scraping_pipepline` branch
 - Manual trigger via GitHub Actions UI
 
 **Steps:**
-1. ✅ Checkout code
-2. ✅ Setup SSH connection to VM
-3. ✅ Pull latest changes on VM
-4. ✅ Rebuild Docker containers
-5. ✅ Restart services
-6. ✅ Run health checks
-7. ✅ Generate deployment summary
+
+1.  Checkout code
+2.  Setup SSH connection to VM
+3.  Pull latest changes on VM
+4.  Rebuild Docker containers
+5.  Restart services
+6.  Run health checks
+7.  Generate deployment summary
 
 **Secrets Required:**
+
 - `SSH_PRIVATE_KEY` - Private SSH key for VM access
 - `VM_HOST` - VM external IP address
 - `VM_USER` - SSH username for VM
@@ -32,14 +35,16 @@ This repository uses GitHub Actions for automated testing and deployment to GCP 
 ### 2. **Run Tests** (`test.yml`)
 
 **Triggers:**
+
 - Push to main or pipeline branches
 - Pull requests
 
 **Steps:**
-1. ✅ Setup Python 3.11
-2. ✅ Install dependencies
-3. ✅ Run linting (optional)
-4. ✅ Run tests
+
+1.  Setup Python 3.11
+2.  Install dependencies
+3.  Run linting (optional)
+4.  Run tests
 
 ---
 
@@ -68,6 +73,7 @@ chmod 600 ~/.ssh/authorized_keys
 Go to: **Settings → Secrets and variables → Actions → New repository secret**
 
 Add:
+
 - `SSH_PRIVATE_KEY` - Content of `~/.ssh/github-actions-deploy`
 - `VM_HOST` - Your VM's external IP
 - `VM_USER` - Your SSH username
@@ -75,6 +81,7 @@ Add:
 ### 4. Test Deployment
 
 Push to main branch or trigger manually:
+
 - Go to **Actions** tab
 - Select **Deploy to GCP VM**
 - Click **Run workflow**
@@ -121,7 +128,7 @@ Push to main branch or trigger manually:
          │
          ▼
 ┌─────────────────┐
-│   ✅ Success    │
+│    Success    │
 └─────────────────┘
 ```
 
@@ -138,6 +145,7 @@ Push to main branch or trigger manually:
 ### Check Services
 
 After deployment:
+
 - **API Health:** http://34.130.75.211:8000/health
 - **API Docs:** http://34.130.75.211:8000/docs
 - **Qdrant Dashboard:** http://34.130.75.211:6333/dashboard
@@ -213,10 +221,10 @@ curl http://localhost:8000/health
 
 ## Security Notes
 
-- ✅ SSH private key is stored as GitHub secret (encrypted)
-- ✅ Only authorized branches can trigger deployment
-- ✅ VM uses SSH key authentication (no passwords)
-- ✅ Firewall rules restrict access to necessary ports only
+- SSH private key is stored as GitHub secret (encrypted)
+- Only authorized branches can trigger deployment
+- VM uses SSH key authentication (no passwords)
+- Firewall rules restrict access to necessary ports only
 
 ---
 
@@ -228,4 +236,3 @@ curl http://localhost:8000/health
 - [ ] Add Slack/Discord notifications
 - [ ] Add performance monitoring
 - [ ] Add database backup before deployment
-

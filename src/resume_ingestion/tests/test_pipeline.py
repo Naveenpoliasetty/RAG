@@ -47,19 +47,19 @@ def test_mongodb_connection():
         
         # Insert test document
         result = mongo_manager.collection.insert_one(test_doc)
-        logger.info(f"✅ MongoDB test document inserted: {result.inserted_id}")
+        logger.info(f" MongoDB test document inserted: {result.inserted_id}")
         
         # Read it back
         retrieved = mongo_manager.collection.find_one({"_id": "pipeline-test-doc"})
         if retrieved:
-            logger.info("✅ MongoDB document retrieval successful")
+            logger.info(" MongoDB document retrieval successful")
         else:
             logger.error("❌ MongoDB document retrieval failed")
             return False
             
         # Test batch operations
         pending_docs = mongo_manager.get_pending_documents_batch(limit=5)
-        logger.info(f"✅ MongoDB batch operation: Found {len(pending_docs)} pending documents")
+        logger.info(f" MongoDB batch operation: Found {len(pending_docs)} pending documents")
         
         mongo_manager.close()
         return True
@@ -77,15 +77,15 @@ def test_embedding_service():
         
         # Test model info
         model_info = embedding_service.get_model_info()
-        logger.info(f"✅ Embedding model loaded: {model_info}")
+        logger.info(f" Embedding model loaded: {model_info}")
         
         # Test encoding
         test_texts = ["This is a test sentence.", "Another test for embedding."]
         embeddings = embedding_service.encode_texts(test_texts)
         
         if embeddings and len(embeddings) == len(test_texts):
-            logger.info(f"✅ Embedding generation successful: {len(embeddings)} vectors created")
-            logger.info(f"✅ Vector dimension: {len(embeddings[0])}")
+            logger.info(f" Embedding generation successful: {len(embeddings)} vectors created")
+            logger.info(f" Vector dimension: {len(embeddings[0])}")
         else:
             logger.error("❌ Embedding generation failed")
             return False
@@ -95,7 +95,7 @@ def test_embedding_service():
         chunks = embedding_service.chunk_text(long_text)
         
         if chunks and len(chunks) > 0:
-            logger.info(f"✅ Text chunking successful: {len(chunks)} chunks created")
+            logger.info(f" Text chunking successful: {len(chunks)} chunks created")
         else:
             logger.error("❌ Text chunking failed")
             return False
@@ -120,12 +120,12 @@ def test_qdrant_connection():
         
         # Test collection info
         collections = qdrant_manager.collections_mapping
-        logger.info(f"✅ Qdrant collections configured: {list(collections.values())}")
+        logger.info(f" Qdrant collections configured: {list(collections.values())}")
         
         for collection_name in collections.values():
             info = qdrant_manager.get_collection_info(collection_name)
             if info:
-                logger.info(f"✅ Collection '{collection_name}': {info['points_count']} points")
+                logger.info(f" Collection '{collection_name}': {info['points_count']} points")
             else:
                 logger.warning(f"⚠️  Collection '{collection_name}' not found (will be created during processing)")
         
@@ -174,7 +174,7 @@ def test_complete_pipeline():
         
         # Insert test resume into MongoDB
         mongo_manager.collection.insert_one(test_resume)
-        logger.info("✅ Test resume inserted into MongoDB")
+        logger.info(" Test resume inserted into MongoDB")
         
         # Process through pipeline
         processor = BatchIngestionProcessor(batch_size=10)
@@ -183,12 +183,12 @@ def test_complete_pipeline():
         success = processor.process_single_document(test_resume)
         
         if success:
-            logger.info("✅ Complete pipeline test successful!")
+            logger.info(" Complete pipeline test successful!")
             
             # Verify the document was marked as ingested
             updated_doc = mongo_manager.collection.find_one({"_id": "complete-pipeline-test"})
             if updated_doc and updated_doc.get("qdrant_status") == "ingested":
-                logger.info("✅ Document successfully marked as ingested in MongoDB")
+                logger.info(" Document successfully marked as ingested in MongoDB")
             else:
                 logger.warning("⚠️  Document not marked as ingested")
                 
@@ -210,7 +210,7 @@ def test_complete_pipeline():
 
 def main():
     """Run all tests."""
-    logger.info("🚀 Starting Pipeline Integration Tests")
+    logger.info("Starting Pipeline Integration Tests")
     logger.info("=" * 60)
     
     # Wait a bit for Docker services to be fully ready
@@ -241,7 +241,7 @@ def main():
     logger.info("=" * 60)
     
     for test_name, success in results:
-        status = "✅ PASS" if success else "❌ FAIL"
+        status = " PASS" if success else "❌ FAIL"
         logger.info(f"{test_name:.<30} {status}")
     
     all_passed = all(success for _, success in results)

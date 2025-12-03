@@ -246,7 +246,7 @@ step8_verify_deployment() {
     log_success "Deployment verification complete!"
     echo
     echo "=========================================="
-    echo "🚀 Deployment Summary"
+    echo "Deployment Summary"
     echo "=========================================="
     echo "External IP: $external_ip"
     echo "FastAPI URL: http://$external_ip:8000"
@@ -268,7 +268,7 @@ step8_verify_deployment() {
 # ============================================================================
 main() {
     echo "=========================================="
-    echo "🚀 Resume RAG API Deployment Script"
+    echo "Resume RAG API Deployment Script"
     echo "=========================================="
     echo
     

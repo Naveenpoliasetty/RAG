@@ -8,7 +8,6 @@ import json
 from src.utils.logger import get_logger
 from fastapi import APIRouter, File, UploadFile, Form#type: ignore
 from fastapi.responses import JSONResponse #type: ignore
-from src.generation.resume_generator import orchestrate_resume_generation
 from src.utils.llm_client import get_openai_client, get_llm_model
 import timeit
 import pdfplumber
@@ -213,58 +212,6 @@ async def parse_resume_endpoint(file: UploadFile = File(...)):
 
         resume_dict['experience_count'] = len(resume_dict["experiences"])
         
-        return JSONResponse(content=json.loads(resume_data))
+        return JSONResponse(content=resume_dict)
     except Exception as e:
-        return JSONResponse(content={"error": str(e)}, status_code=500)
-
-@router.post("/generate_resume")
-async def generate_resume_endpoint(
-    file: UploadFile = File(...),
-    job_description: str = Form(...),
-    related_jobs: str = Form(...)
-):
-    """
-    Unified API to generate resume with job context.
-    Accepts:
-    - file: Resume file upload (.docx or .pdf)
-    - job_description: Job description (string)
-    - related_jobs: JSON string array (e.g., '["Job1", "Job2"]') that will be parsed as a list
-    """
-    try:
-        # Extract text from resume file
-        os.makedirs("uploads", exist_ok=True)
-        file_path = f"uploads/{file.filename}"
-        with open(file_path, "wb") as f:
-            f.write(await file.read())
-        resume_text = doc_to_text(file_path)
-        
-        # Parse related_jobs from JSON string to list and validate
-        try:
-            parsed_related_jobs = json.loads(related_jobs)
-            if not isinstance(parsed_related_jobs, list):
-                return JSONResponse(
-                    content={"error": "related_jobs must be a JSON array (list)"},
-                    status_code=400
-                )
-            # Ensure all items in the list are strings
-            if not all(isinstance(item, str) for item in parsed_related_jobs):
-                return JSONResponse(
-                    content={"error": "All items in related_jobs must be strings"},
-                    status_code=400
-                )
-        except json.JSONDecodeError as e:
-            return JSONResponse(
-                content={"error": f"Invalid JSON format for related_jobs: {str(e)}"},
-                status_code=400
-            )
-        
-        # Generate resume sections using job_roles (related_jobs)
-        result = await orchestrate_resume_generation(job_description, parsed_related_jobs)
-        with open("result.json", "w") as f:
-            json.dump(result, f, indent=4)
-        with open("resume_text.json", "w") as f:
-            json.dump(resume_text, f, indent=4)
-        return JSONResponse(content=result)
-    except Exception as e:
-        logger.error(f"Error generating resume: {str(e)}")
         return JSONResponse(content={"error": str(e)}, status_code=500)

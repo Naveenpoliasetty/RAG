@@ -58,7 +58,7 @@ jobs:
           docker compose -f docker-compose.prod.yml build --no-cache --pull --build-arg COMMIT_SHA=${{ github.sha }}
 
           # Start containers
-          echo "🚀 Starting containers..."
+          echo "Starting containers..."
           docker compose -f docker-compose.prod.yml up -d
 
           # Wait for containers to start
@@ -87,12 +87,12 @@ jobs:
           echo "Checking Qdrant..."
           curl -f http://${{ secrets.VM_HOST }}:6333/ || exit 1
 
-          echo "✅ All health checks passed!"
+          echo " All health checks passed!"
 
       - name: Deployment Summary
         if: always()
         run: |
-          echo "## 🚀 Deployment Summary" >> $GITHUB_STEP_SUMMARY
+          echo "## Deployment Summary" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "- **Branch:** ${{ github.ref_name }}" >> $GITHUB_STEP_SUMMARY
           echo "- **Commit:** ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY

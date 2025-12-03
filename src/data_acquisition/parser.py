@@ -3,6 +3,42 @@ from src.utils.logger import get_logger
 import re
 logger = get_logger("Parser")
 
+# Pre-compile regex patterns for better performance
+RESUME_PATTERNS = [
+    re.compile(r'\bresume\b', re.IGNORECASE),
+    re.compile(r'\brésumé\b', re.IGNORECASE),
+    re.compile(r'\bresumes\b', re.IGNORECASE),
+    re.compile(r'\brésumés\b', re.IGNORECASE),
+    re.compile(r'\bcv\b', re.IGNORECASE),
+    re.compile(r'\bcvs\b', re.IGNORECASE),
+    re.compile(r'\bcurriculum vitae\b', re.IGNORECASE),
+]
+
+JOB_ROLE_REPLACEMENTS = [
+    (re.compile(r'\bpl\s*/\s*sql\b', re.IGNORECASE), 'pl/sql'),
+    (re.compile(r'\bplsql\b', re.IGNORECASE), 'pl/sql'),
+    (re.compile(r'\bdba\b', re.IGNORECASE), 'database administrator'),
+    (re.compile(r'\bfi/co\b', re.IGNORECASE), 'fi-co'),
+    (re.compile(r'\bfi\s*/\s*co\b', re.IGNORECASE), 'fi-co'),
+    (re.compile(r'\bsr\.\b', re.IGNORECASE), 'senior'),
+    (re.compile(r'\bsr\b', re.IGNORECASE), 'senior'),
+    (re.compile(r'\band\b', re.IGNORECASE), '&'),
+    (re.compile(r'\s+'), ' '),  # Normalize multiple spaces
+]
+
+PREFIX_REMOVALS = [
+    re.compile(r'^senior\s+', re.IGNORECASE),
+    re.compile(r'^lead\s+', re.IGNORECASE),
+    re.compile(r'^sr\s+', re.IGNORECASE),
+]
+
+CLEANUP_PATTERNS = [
+    (re.compile(r'\s+'), ' '),
+    (re.compile(r'^\s+|\s+$'), ''),
+    (re.compile(r'^[,\-\s]+|[,\-\s]+$'), ''),
+]
+
+
 def remove_resume_from_role(role: str) -> str:
     """
     Remove 'Resume' and its variations from job role.
@@ -16,25 +52,13 @@ def remove_resume_from_role(role: str) -> str:
     if not role:
         return ""
     
-    # Remove various forms of 'Resume' with different spellings and cases
-    resume_patterns = [
-        r'\bresume\b',
-        r'\brésumé\b',
-        r'\bresumes\b',
-        r'\brésumés\b',
-        r'\bcv\b',
-        r'\bcvs\b',
-        r'\bcurriculum vitae\b',
-    ]
-    
     cleaned_role = role
-    for pattern in resume_patterns:
-        cleaned_role = re.sub(pattern, '', cleaned_role, flags=re.IGNORECASE)
+    for pattern in RESUME_PATTERNS:
+        cleaned_role = pattern.sub('', cleaned_role)
     
     # Clean up extra spaces and punctuation
-    cleaned_role = re.sub(r'\s+', ' ', cleaned_role)  # Multiple spaces to single space
-    cleaned_role = re.sub(r'^\s+|\s+$', '', cleaned_role)  # Trim spaces
-    cleaned_role = re.sub(r'^[,\-\s]+|[,\-\s]+$', '', cleaned_role)  # Trim punctuation
+    for pattern, replacement in CLEANUP_PATTERNS:
+        cleaned_role = pattern.sub(replacement, cleaned_role)
     
     return cleaned_role
 
@@ -61,25 +85,12 @@ def normalize_job_role(role: str) -> str:
     normalized = role.lower().strip()
     
     # Standardize common abbreviations and spellings
-    replacements = {
-        r'\bpl\s*/\s*sql\b': 'pl/sql',
-        r'\bplsql\b': 'pl/sql',
-        r'\bdba\b': 'database administrator',
-        r'\bfi/co\b': 'fi-co',
-        r'\bfi\s*/\s*co\b': 'fi-co',
-        r'\bsr\.\b': 'senior',
-        r'\bsr\b': 'senior',
-        r'\band\b': '&',
-        r'\s+': ' ',  # Normalize multiple spaces
-    }
-    
-    for pattern, replacement in replacements.items():
-        normalized = re.sub(pattern, replacement, normalized)
+    for pattern, replacement in JOB_ROLE_REPLACEMENTS:
+        normalized = pattern.sub(replacement, normalized)
     
     # Remove common prefixes/suffixes that don't change the core role
-    normalized = re.sub(r'^senior\s+', '', normalized)
-    normalized = re.sub(r'^lead\s+', '', normalized)
-    normalized = re.sub(r'^sr\s+', '', normalized)
+    for pattern in PREFIX_REMOVALS:
+        normalized = pattern.sub('', normalized)
     
     return normalized.strip()
 

@@ -42,7 +42,7 @@ Required Skills:
     )
     
     print("\n" + "="*80)
-    print("✅ Section-level hybrid search completed successfully!")
+    print(" Section-level hybrid search completed successfully!")
     print("="*80)
     print(f"Result sections: {list(result.keys())}")
     

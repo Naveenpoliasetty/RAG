@@ -25,7 +25,7 @@ qdrant:
 embeddings:
   model: "intfloat/e5-base-v2"
   batch_size: 16
-  device: "cpu"  # or "cuda"
+  device: "cpu" # or "cuda"
   chunk_size: 1000
   chunk_overlap: 150
 
@@ -39,12 +39,12 @@ processing:
 # Collections Mapping
 collections:
   professional_summary: "professional_summaries"
-  technical_skills: "technical_skills"    # ✅ Fixed spelling
-  experiences: "experiences"              # ✅ Fixed to plural
+  technical_skills: "technical_skills" #  Fixed spelling
+  experiences: "experiences" #  Fixed to plural
 
 # Retry Configuration
 retry:
-  max_delay: 300  # 5 minutes in seconds
+  max_delay: 300 # 5 minutes in seconds
   base_delay: 5
   backoff_factor: 3
 
@@ -53,17 +53,17 @@ docker:
   mongodb_service: "resume_mongodb"
   qdrant_service: "resume_qdrant"
 
-
 llm_config:
   # Model name (optional)
   # - If set to null/empty/omitted: Uses "meta-llama/llama-3.1-8b-instruct" (common RunPod default)
   # - If set to a model name: Uses that specific model name
   # Note: The default model name matches what RunPod endpoints typically use
-  model: "meta-llama/llama-3.1-8b-instruct" # Set to null/empty to use default, or specify a model name like "meta-llama/llama-3.1-8b-instruct"
+  # model: "hugging-quants/meta-llama-3.1-8b-instruct-awq-int4" # Set to null/empty to use default, or specify a model name like "meta-llama/llama-3.1-8b-instruct"
+  model: "hugging-quants/meta-llama-3.1-8b-instruct-awq-int4"
   # model: "meta-llama/llama-3.1-8b-instruct"  # Uncomment to explicitly set model
   # RunPod vLLM server endpoint (OpenAI-compatible)
   # IMPORTANT: For RunPod vLLM servers, you need the OpenAI-compatible endpoint, NOT the serverless API endpoint
-  # 
+  #
   # To get your OpenAI-compatible endpoint:
   # 1. Go to RunPod dashboard -> Your Pod -> Endpoints
   # 2. Look for the endpoint that ends with "/v1" (OpenAI-compatible)
@@ -73,9 +73,10 @@ llm_config:
   # NOTE: The serverless API endpoint (https://api.runpod.ai/v2/...) is NOT OpenAI-compatible
   #       and won't work with the OpenAI client wrapper
 
-  base_url: "https://api.runpod.ai/v2/f8eyuqzkhax7pl/openai/v1"
+  base_url: "https://api.runpod.ai/v2/ig6p3661aklsz0/openai/v1"
   # RunPod API key (Bearer token)
   # You can also set this via RUNPOD_API_KEY or OPENAI_API_KEY environment variable  # Replace with your actual API key
-  SUMMARY_MAX_TOKENS: 450
-  SKILLS_MAX_TOKENS: 200
-  EXPERIENCE_MAX_TOKENS: 450
+  global_max_tokens: 4096
+  SUMMARY_MAX_TOKENS: 4000
+  SKILLS_MAX_TOKENS: 1200
+  EXPERIENCE_MAX_TOKENS: 4000

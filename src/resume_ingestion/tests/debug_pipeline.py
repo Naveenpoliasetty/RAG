@@ -13,11 +13,11 @@ def test_basic_connectivity():
     try:
         client = MongoClient("mongodb://admin:password@localhost:27017/", serverSelectionTimeoutMS=5000)
         client.admin.command('ping')
-        logger.info("✅ MongoDB connection successful")
+        logger.info(" MongoDB connection successful")
         
         db = client["resumes_db"]
         count = db.resumes.count_documents({})
-        logger.info(f"✅ MongoDB has {count} documents in resumes collection")
+        logger.info(f" MongoDB has {count} documents in resumes collection")
         client.close()
     except Exception as e:
         logger.error(f"❌ MongoDB connection failed: {e}")
@@ -25,21 +25,21 @@ def test_basic_connectivity():
     
     # Test if we can import the modules
     try:
-        logger.info("✅ MongoDBManager import successful")
+        logger.info(" MongoDBManager import successful")
     except ImportError as e:
         logger.error(f"❌ MongoDBManager import failed: {e}")
         return False
         
     try:
         from resume_ingestion.vector_store.qdrant_manager import QdrantManager #type: ignore
-        logger.info("✅ QdrantManager import successful")
+        logger.info(" QdrantManager import successful")
     except ImportError as e:
         logger.error(f"❌ QdrantManager import failed: {e}")
         return False
         
     try:
         from resume_ingestion.vector_store.embeddings import EmbeddingService
-        logger.info("✅ EmbeddingService import successful")
+        logger.info(" EmbeddingService import successful")
     except ImportError as e:
         logger.error(f"❌ EmbeddingService import failed: {e}")
         return False
@@ -55,14 +55,14 @@ def test_mongodb_manager():
         
         # Test health check
         if mongo.health_check():
-            logger.info("✅ MongoDBManager health check passed")
+            logger.info(" MongoDBManager health check passed")
         else:
             logger.error("❌ MongoDBManager health check failed")
             return False
         
         # Test getting pending documents
         pending = mongo.get_pending_documents_batch(limit=5)
-        logger.info(f"✅ Found {len(pending)} pending documents")
+        logger.info(f" Found {len(pending)} pending documents")
         
         mongo.close()
         return True
@@ -79,12 +79,12 @@ def test_qdrant_connection():
         qdrant = QdrantManager()
         
         if qdrant.health_check():
-            logger.info("✅ Qdrant health check passed")
+            logger.info(" Qdrant health check passed")
         else:
             logger.error("❌ Qdrant health check failed")
             return False
             
-        logger.info(f"✅ Qdrant collections: {qdrant.collections_mapping}")
+        logger.info(f" Qdrant collections: {qdrant.collections_mapping}")
         qdrant.close()
         return True
         
@@ -93,7 +93,7 @@ def test_qdrant_connection():
         return False
 
 if __name__ == "__main__":
-    logger.info("🚀 Starting Pipeline Debug...")
+    logger.info("Starting Pipeline Debug...")
     
     tests = [
         ("Basic Connectivity", test_basic_connectivity),
@@ -109,7 +109,7 @@ if __name__ == "__main__":
         try:
             success = test_func()
             if success:
-                logger.info(f"✅ {test_name} PASSED")
+                logger.info(f" {test_name} PASSED")
             else:
                 logger.error(f"❌ {test_name} FAILED")
                 all_passed = False

@@ -1,8 +1,14 @@
+import os
+# Suppress Hugging Face tokenizers parallelism warning
+# Set this before any tokenizers are imported
+os.environ["TOKENIZERS_PARALLELISM"] = "false"
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from src.api import parser_resume, get_unique_job_roles, generate_resume
 from src.core.config import settings
+from src.core.db_manager import initialize_connections, close_connections
 
 
 app = FastAPI(
@@ -19,6 +25,19 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Database lifecycle events
+@app.on_event("startup")
+async def startup_event():
+    """Initialize database connections on startup."""
+    await initialize_connections()
+
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    """Close database connections on shutdown."""
+    close_connections()
+
 
 # Include routerss      
 

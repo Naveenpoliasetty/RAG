@@ -47,11 +47,12 @@ Your task is to generate concise, impactful professional summaries optimized for
 CRITICAL RULES:
 - Use ONLY the facts and information provided in the user's extracted resume data
 - DO NOT invent, assume, or add any information not present in the source material
-- Produce exactly 14-20 bullet points maximum
-- Each bullet point must be under 25-30 words
-- Total content must be under 500 words combined
+- Produce exactly 15-25 bullet points (aim for comprehensive coverage)
+- Each bullet point should be 70-100 words (be detailed and specific)
+- Make them professional and impactful.
 - Focus on key achievements, skills, and quantifiable results
 - Ensure ATS-friendly language with relevant keywords
+- Include as much relevant detail as possible from the source data
 
 OUTPUT FORMAT:
 You MUST return ONLY valid JSON with this exact structure:
@@ -77,11 +78,12 @@ Your task is to create a structured technical skills dictionary from extracted r
 CRITICAL RULES:
 - Extract and categorize ONLY skills explicitly mentioned in the provided data
 - ABSOLUTELY NO HALLUCINATIONS - if a skill isn't in the source, don't include it
-- Maximum 10 skill categories total
-- Maximum 10 items per category
+- Maximum 15 skill categories total (aim for comprehensive coverage)
+- Maximum 20 items per category (include all relevant skills)
 - Group similar skills logically (e.g., Programming Languages, Frameworks, Tools)
 - Use clear, standard category names
 - Remove duplicates within categories
+- Be thorough - include all skills mentioned in the source data
 
 OUTPUT FORMAT:
 You MUST return ONLY valid JSON with this exact structure:
@@ -109,15 +111,19 @@ EXPERIENCE_SYSTEM_PROMPT = """
 You are an experienced resume writer specializing in achievement-oriented experience bullet points.
 Your task is to create impactful experience descriptions from extracted resume data.
 
-CRITICAL RULES:
+CRITICAL RULES - YOU MUST FOLLOW THESE EXACTLY:
 - Use ONLY the information provided in the extracted experience data
 - NO HALLUCINATIONS - do not invent companies, roles, or achievements
-- Create exactly 5-7 bullet points TOTAL (distributed across experiences)
-- Each bullet point must be under 25 words
+- YOU MUST generate exactly 15-20 bullet points per experience (NOT fewer, aim for 20)
+- Each bullet point MUST be 80-100 words (be detailed and specific, similar to summary bullets)
 - Focus on achievements, impact, and quantifiable results
-- Use action-oriented language (developed, implemented, optimized, etc.)
+- Use action-oriented language with power words
 - Start each bullet with strong action verbs
 - Ensure relevance to the target job description
+- Include as much relevant detail as possible from the source data
+- Be thorough - extract ALL key responsibilities and achievements from the source data
+- DO NOT summarize or truncate - include full details
+- If the source data has many responsibilities, include them ALL in separate bullet points
 
 OUTPUT FORMAT:
 You MUST return ONLY valid JSON with this exact structure:
@@ -147,7 +153,14 @@ EXTRACTED EXPERIENCE DATA (from top {top_k} resumes):
 Create achievement-oriented experience bullet points following all the rules above.
 Focus on experiences most relevant to the job description.
 
+CRITICAL: Generate a COMPREHENSIVE experience section with 15-20 detailed bullet points per experience.
+Extract ALL key responsibilities, achievements, and accomplishments from the source data.
+Be thorough and include as much relevant detail as possible - do not skip any important information.
+
 For each experience section, extract:
-1. Key responsibilities/achievements as bullet points
+1. Key responsibilities/achievements as bullet points (MUST generate 15-20 bullet points per experience)
 2. Work environment (if mentioned in source data)
+
+Make sure each bullet point is detailed (80-100 words) and highlights specific achievements, impact, and quantifiable results.
+Do not truncate or summarize - include full details from the source data.
 """

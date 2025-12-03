@@ -33,7 +33,7 @@ def debug_processing_detailed():
     prof_summary = doc.get('professional_summary')
     if prof_summary:
         if isinstance(prof_summary, list):
-            logger.info(f"   ✅ Professional Summary: {len(prof_summary)} items")
+            logger.info(f"    Professional Summary: {len(prof_summary)} items")
             for i, item in enumerate(prof_summary[:2]):  # Show first 2 items
                 if item and isinstance(item, str):
                     logger.info(f"      [{i}] {item[:100]}...")
@@ -51,7 +51,7 @@ def debug_processing_detailed():
     tech_skills = doc.get('technical_skills')
     if tech_skills:
         if isinstance(tech_skills, list):
-            logger.info(f"   ✅ Technical Skills: {len(tech_skills)} items")
+            logger.info(f"    Technical Skills: {len(tech_skills)} items")
             for i, skill in enumerate(tech_skills[:3]):  # Show first 3 skills
                 if skill and isinstance(skill, str):
                     logger.info(f"      [{i}] {skill}")
@@ -124,7 +124,7 @@ def debug_processing_detailed():
                 {"_id": doc["_id"]},
                 {"$set": {"qdrant_status": "completed"}}
             )
-            logger.info("✅ Document marked as completed")
+            logger.info(" Document marked as completed")
             
         except Exception as e:
             logger.error(f"❌ Upsert FAILED: {e}")
@@ -137,7 +137,7 @@ def debug_processing_detailed():
         try:
             vectors = qdrant.embedding_service.encode_texts([test_text])
             if vectors and len(vectors) > 0:
-                logger.info(f"✅ Manual embedding test PASSED: {len(vectors[0])} dimensions")
+                logger.info(f" Manual embedding test PASSED: {len(vectors[0])} dimensions")
             else:
                 logger.error("Manual embedding test FAILED: No vectors returned")
         except Exception as e:

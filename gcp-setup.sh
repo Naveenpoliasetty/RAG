@@ -195,7 +195,7 @@ fi
 
 echo ""
 echo "=========================================="
-echo "✅ GCP Setup Complete!"
+echo " GCP Setup Complete!"
 echo "=========================================="
 echo ""
 echo "Instance Details:"

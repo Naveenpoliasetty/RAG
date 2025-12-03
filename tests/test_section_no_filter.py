@@ -40,7 +40,7 @@ def test():
     for i, (rid, score) in enumerate(results[:3], 1):
         print(f"      {i}. {rid[:20]}... score={score:.4f}")
     
-    print("\n✅ Section-level hybrid search is working!")
+    print("\n Section-level hybrid search is working!")
 
 if __name__ == "__main__":
     test()

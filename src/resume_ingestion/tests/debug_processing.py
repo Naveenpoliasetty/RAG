@@ -22,11 +22,11 @@ def debug_single_document():
         content = doc.get(section)
         if content:
             if isinstance(content, list):
-                print(f"   ✅ {section}: {len(content)} items")
+                print(f"    {section}: {len(content)} items")
                 if content and isinstance(content[0], str):
                     print(f"      Preview: {content[0][:100]}...")
             elif isinstance(content, str):
-                print(f"   ✅ {section}: {len(content)} chars")
+                print(f"    {section}: {len(content)} chars")
                 print(f"      Preview: {content[:100]}...")
         else:
             print(f"   ❌ {section}: EMPTY")
@@ -51,7 +51,7 @@ def debug_single_document():
     print(f"\n📊 Total points generated: {total_points}")
     
     if total_points > 0:
-        print("✅ Ready to upsert to Qdrant!")
+        print(" Ready to upsert to Qdrant!")
         # Actually upsert to test
         qdrant.upsert_to_qdrant(points)
         
@@ -60,7 +60,7 @@ def debug_single_document():
             {"_id": doc["_id"]},
             {"$set": {"qdrant_status": "completed"}}
         )
-        print("✅ Document marked as completed")
+        print(" Document marked as completed")
     else:
         print("❌ No points generated - check document content")
 

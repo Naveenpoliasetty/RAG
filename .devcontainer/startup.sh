@@ -1,6 +1,6 @@
 #!/bin/bash
 
-echo "🚀 Starting ZenML MLOps Environment..."
+echo "Starting ZenML MLOps Environment..."
 
 # Check if we're inside a container with docker access
 if command -v docker &> /dev/null; then
@@ -20,7 +20,7 @@ retry_count=0
 zenml_ready=false
 while [ $retry_count -lt $max_retries ]; do
     if curl -s http://zenml-server:8080/health > /dev/null 2>&1; then
-        echo "✅ ZenML Server is ready!"
+        echo " ZenML Server is ready!"
         zenml_ready=true
         break
     fi
@@ -38,7 +38,7 @@ fi
 echo "🔍 Checking Qdrant..."
 qdrant_ready=false
 if curl -s http://qdrant:6333/health > /dev/null 2>&1; then
-    echo "✅ Qdrant is ready!"
+    echo " Qdrant is ready!"
     qdrant_ready=true
     # Check Qdrant dashboard
     qdrant_response=$(curl -s http://qdrant:6333/ 2>&1)
@@ -53,7 +53,7 @@ fi
 # Check if PostgreSQL is accessible
 echo "🔍 Checking PostgreSQL..."
 if pg_isready -h postgres -p 5432 -U zenml > /dev/null 2>&1; then
-    echo "✅ PostgreSQL is ready!"
+    echo " PostgreSQL is ready!"
 else
     echo "⚠️  PostgreSQL may not be ready yet"
     echo "   Try: docker logs zenml-postgres"
