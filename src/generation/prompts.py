@@ -130,16 +130,28 @@ You MUST return ONLY valid JSON with this exact structure:
 {
   "experience": [
     {
+      "job_role": "Fused job title from source experiences only",
       "responsibilities": ["achievement 1", "achievement 2", ...],
       "environment": "optional work environment description"
     },
     {
+      "job_role": "Fused job title from source experiences only",
       "responsibilities": ["achievement 1", "achievement 2", ...],
       "environment": "optional work environment description"
     }
   ]
 }
 Each object in the "experience" array represents one resume's experience section.
+
+JOB ROLE FUSION GUIDELINES:
+- Analyze ONLY the job titles from the source experiences provided
+- DO NOT consider or reference the job description when determining the job role
+- If multiple sources have the same job title, use that exact title
+- If sources have similar/related titles, intelligently fuse them into one representative title
+- Prefer the most common or senior title from the sources
+- Keep it authentic - use actual titles from sources, don't invent new ones
+- The job role should reflect what the sources actually were, not what the target position is
+
 The "environment" field is OPTIONAL - only include if mentioned in source data.
 """
 

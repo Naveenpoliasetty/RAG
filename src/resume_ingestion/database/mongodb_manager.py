@@ -5,6 +5,7 @@ from pymongo.errors import PyMongoError
 from bson import ObjectId  
 from src.core.settings import config
 from src.utils.logger import get_logger
+import json
 
 logger = get_logger("ReliableBatchWorker")
 
@@ -243,6 +244,7 @@ class MongoDBManager:
                     continue
                 found_ids.add(str(doc_resume_id))
                 results.append({
+                    "resume_id": str(doc_resume_id),
                     section_name: doc.get(section_name, None)
                 })
             
@@ -257,3 +259,25 @@ class MongoDBManager:
         except Exception as e:
             logger.error(f"Error fetching sections for resumes: {e}", exc_info=True)
             return []
+
+    def get_resume_by_id(self, resume_id: str) -> Optional[Dict[str, Any]]:
+        """
+        Fetch the complete resume document by resume_id.
+        
+        Args:
+            resume_id: Resume ID as string
+            
+        Returns:
+            Complete resume document as dict, or None if not found
+        """
+        try:
+            doc = self.collection.find_one({"resume_id": resume_id})
+            if doc:
+                logger.info(f"Found resume document for resume_id: {resume_id}")
+                return doc
+            else:
+                logger.warning(f"No resume found for resume_id: {resume_id}")
+                return None
+        except PyMongoError as e:
+            logger.error(f"Error fetching resume {resume_id}: {e}")
+            return None

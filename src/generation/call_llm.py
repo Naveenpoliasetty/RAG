@@ -1,4 +1,4 @@
-from typing import Type
+from typing import Type, Optional
 from pydantic import BaseModel
 import instructor
 from dotenv import load_dotenv
@@ -8,13 +8,24 @@ from src.utils.llm_client import get_openai_client, get_llm_model, load_llm_conf
 logger = get_logger(__name__)
 load_dotenv()
 
+# Cache the instructor client to avoid reinitializing connection on every call
+_cached_client: Optional[instructor.Instructor] = None
+
+def _get_instructor_client():
+    """Get or create a cached instructor client."""
+    global _cached_client
+    if _cached_client is None:
+        logger.info("Initializing LLM client connection (first call)")
+        _cached_client = instructor.from_openai(
+            get_openai_client(),
+            mode=instructor.Mode.JSON,
+        )
+    return _cached_client
+
 # Your async LLM JSON generator (RunPod vLLM with OpenAI wrapper)
 async def llm_json(output_model: Type[BaseModel], system_prompt:str, user_prompt: str, max_tokens: int = 1000, temperature: float = 0.4):
     logger.info(f"role: system, content: {system_prompt}, role: user, content: {user_prompt}")
-    client = instructor.from_openai(
-        get_openai_client(),
-        mode=instructor.Mode.JSON,
-    )
+    client = _get_instructor_client()
     
     # Build request parameters
     # Note: RunPod server has a hard limit of 3000 tokens for completion

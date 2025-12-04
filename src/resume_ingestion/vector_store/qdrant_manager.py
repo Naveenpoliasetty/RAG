@@ -758,13 +758,16 @@ class QdrantManager:
                     ]
                 )
             
+            # Search without score threshold to get all matching results
+            # Qdrant by default may filter low-scoring results, so we explicitly set score_threshold=None
             results = self.client.search(
                 collection_name=collection_name,
                 query_vector=vector,
                 limit=top_k,
                 with_payload=True,
                 with_vectors=False,
-                query_filter=search_filter
+                query_filter=search_filter,
+                score_threshold=None  # No threshold - get all results even with low scores
             )
         except Exception as e:
             logger.error(f"Search failed on {collection_name}: {e}")
@@ -971,10 +974,14 @@ class QdrantManager:
         jd_vector = jd_vecs[0]
         
         # Semantic search on this collection only
+        # Request more results to ensure we get top_k unique resume IDs
+        # (some resumes may have many chunks, so we need a higher multiplier)
+        search_limit = max(top_k * 20, 50)  # At least 20x top_k or 50, whichever is higher
+        logger.info(f"Section '{section_key}': Requesting {search_limit} search results (top_k={top_k})")
         search_results = self._search_collection(
             collection_name,
             jd_vector,
-            top_k=top_k * 5,  # Get more candidates for keyword re-ranking
+            top_k=search_limit,
             resume_ids_filter=resume_ids_filter
         )
         
@@ -984,6 +991,8 @@ class QdrantManager:
                 logger.warning(f"  Filtered by {len(resume_ids_filter)} resume IDs. "
                              f"Check if these IDs exist in Qdrant collection '{collection_name}'")
             return []
+        
+        logger.info(f"Section '{section_key}': Found {len(search_results)} search results (requested {search_limit})")
         
         # Extract unique resume IDs and their semantic scores
         resume_semantic_scores = {}
@@ -996,6 +1005,31 @@ class QdrantManager:
                     resume_semantic_scores[rid] = score
         
         resume_ids = list(resume_semantic_scores.keys())
+        logger.info(f"Section '{section_key}': Extracted {len(resume_ids)} unique resume IDs from {len(search_results)} search results")
+        
+        # If we don't have enough unique resume IDs, try requesting even more results
+        if len(resume_ids) < top_k and resume_ids_filter:
+            logger.warning(f"Section '{section_key}': Only found {len(resume_ids)} unique resume IDs, need {top_k}. "
+                         f"Trying to request more results...")
+            # Try requesting even more results (up to the filter size)
+            extended_limit = min(len(resume_ids_filter) * 5, 200)  # Request up to 5x filter size or 200
+            if extended_limit > search_limit:
+                logger.info(f"Section '{section_key}': Requesting {extended_limit} search results (extended)")
+                extended_results = self._search_collection(
+                    collection_name,
+                    jd_vector,
+                    top_k=extended_limit,
+                    resume_ids_filter=resume_ids_filter
+                )
+                # Merge results
+                for result in extended_results:
+                    rid = result.get("resume_id")
+                    score = result.get("score", 0.0)
+                    if rid:
+                        if rid not in resume_semantic_scores or score > resume_semantic_scores[rid]:
+                            resume_semantic_scores[rid] = score
+                resume_ids = list(resume_semantic_scores.keys())
+                logger.info(f"Section '{section_key}': After extended search, extracted {len(resume_ids)} unique resume IDs")
         
         # Extract keywords from job description
         jd_keywords = set(self._extract_keywords_from_text(job_description))
@@ -1234,3 +1268,343 @@ class QdrantManager:
                 logger.info("Qdrant client closed.")
         except Exception as e:
             logger.warning(f"Error closing Qdrant client: {e}")
+
+
+    def _compute_keyword_scores_for_collection(
+        self,
+        collection_name: str,
+        jd_keywords: set,
+        resume_ids: List[str],
+        max_points_per_resume: int = 1000,
+    ) -> Dict[str, float]:
+        """
+        Compute keyword match scores for a given collection and a list of resume_ids.
+        Score = (# of matching keywords) / (# of JD keywords).
+
+        Args:
+            collection_name: Qdrant collection name (e.g., summaries, experiences)
+            jd_keywords: set of keywords extracted from job description
+            resume_ids: list of resume IDs to score
+            max_points_per_resume: scroll limit per resume
+
+        Returns:
+            Dict[resume_id, keyword_score]
+        """
+        if not jd_keywords:
+            return {rid: 0.0 for rid in resume_ids}
+        logger.info(f"Keywords from JD: {jd_keywords}")
+
+        resume_keyword_scores: Dict[str, float] = {}
+
+        for rid in resume_ids:
+            # Gather all keywords across chunks for this resume in this collection
+            resume_keywords = set()
+
+            flt = qmodels.Filter(
+                must=[qmodels.FieldCondition(key="resume_id",
+                                            match=qmodels.MatchValue(value=rid))]
+            )
+
+            try:
+                points, _ = self.client.scroll(
+                    collection_name=collection_name,
+                    with_payload=True,
+                    with_vectors=False,
+                    scroll_filter=flt,
+                    limit=max_points_per_resume,
+                )
+
+                for point in points:
+                    payload = point.payload or {}
+                    keywords = payload.get("keywords", [])
+                    logger.info(f"Keywords for resume {rid}: {keywords}")
+                    if isinstance(keywords, list):
+                        resume_keywords.update(keywords)
+
+                if jd_keywords:
+                    matched = jd_keywords.intersection(resume_keywords)
+                    logger.info(f"Matched keywords: {matched}")
+                    match_percentage = len(matched) / len(jd_keywords)
+                    logger.info(f"Match percentage: {match_percentage}")
+                else:
+                    match_percentage = 0.0
+
+                resume_keyword_scores[rid] = match_percentage
+
+            except Exception as e:
+                logger.warning(
+                    f"[Keyword scoring] Failed to fetch keywords for resume {rid} "
+                    f"in collection '{collection_name}': {e}"
+                )
+                resume_keyword_scores[rid] = 0.0
+
+        return resume_keyword_scores
+    def match_resumes_keyword_then_semantic(
+        self,
+        job_description: str,
+        resume_ids_filter: Optional[List[str]] = None,
+        top_k: int = 3,
+    ) -> List[Tuple[str, float]]:
+        """
+        New pipeline:
+        1) Keyword matching on summaries + experiences (within resume_ids_filter).
+        2) Merge + sort by keyword score, take unique resume IDs as candidates.
+        3) Semantic search on technical_skills, professional_summary, experiences
+            but ONLY for those candidate IDs.
+        4) Return top_k resumes by final semantic score.
+
+        Args:
+            job_description: Raw job description text.
+            resume_ids_filter: List of resume_ids (as strings) we care about.
+                            If None or empty -> nothing to do, return [].
+            top_k: Number of top resumes to return.
+
+        Returns:
+            List of (resume_id, final_semantic_score), sorted descending.
+        """
+        # ---- Guard: need resume_ids to work on ----
+        if not resume_ids_filter:
+            logger.warning(
+                "[Keyword→Semantic] Empty resume_ids_filter provided; "
+                "cannot perform restricted search."
+            )
+            return []
+
+        # Normalize resume IDs to strings
+        resume_ids_filter = [str(rid) for rid in resume_ids_filter if rid]
+        if not resume_ids_filter:
+            logger.warning(
+                "[Keyword→Semantic] resume_ids_filter became empty after normalization."
+            )
+            return []
+
+        logger.info(
+            f"[Keyword→Semantic] Starting pipeline for {len(resume_ids_filter)} "
+            f"candidate resumes (top_k={top_k})"
+        )
+
+        # ---- Step 1: Extract JD keywords ----
+        jd_keywords = set(self._extract_keywords_from_text(job_description))
+        if not jd_keywords:
+            logger.warning(
+                "[Keyword→Semantic] No keywords extracted from job description. "
+                "Falling back to semantic-only search on filtered resumes."
+            )
+            # Directly fall back to semantic-only search over 3 sections
+            return self._semantic_only_on_filtered_resumes(
+                job_description,
+                resume_ids_filter,
+                top_k=top_k,
+            )
+
+        logger.info(f"[Keyword→Semantic] Extracted {len(jd_keywords)} JD keywords")
+
+        # ---- Identify collection names for summary and experiences ----
+        summary_collection = self.collections_mapping.get("professional_summary")
+        experiences_collection = self.collections_mapping.get("experiences")
+
+        if not summary_collection or not experiences_collection:
+            raise ValueError(
+                "collections_mapping must define 'professional_summary' and 'experiences' "
+                "for this pipeline to work."
+            )
+
+        # ---- Step 2: Keyword scores on summaries ----
+        logger.info(
+            "[Keyword→Semantic] Computing keyword scores for professional_summary collection"
+        )
+        summary_keyword_scores = self._compute_keyword_scores_for_collection(
+            collection_name=summary_collection,
+            jd_keywords=jd_keywords,
+            resume_ids=resume_ids_filter,
+        )
+
+        # ---- Step 3: Keyword scores on experiences ----
+        logger.info(
+            "[Keyword→Semantic] Computing keyword scores for experiences collection"
+        )
+        experiences_keyword_scores = self._compute_keyword_scores_for_collection(
+            collection_name=experiences_collection,
+            jd_keywords=jd_keywords,
+            resume_ids=resume_ids_filter,
+        )
+
+        # ---- Step 4: Merge & sort candidates by keyword score ----
+        # We combine scores from summary + experiences; if a resume appears in both,
+        # we take the max keyword score among the two (you could also use average/sum).
+        combined_keyword_scores: Dict[str, float] = defaultdict(float)
+
+        for rid, score in summary_keyword_scores.items():
+            if score > combined_keyword_scores[rid]:
+                combined_keyword_scores[rid] = score
+
+        for rid, score in experiences_keyword_scores.items():
+            if score > combined_keyword_scores[rid]:
+                combined_keyword_scores[rid] = score
+
+        if not combined_keyword_scores:
+            logger.warning(
+                "[Keyword→Semantic] No keyword scores computed; "
+                "falling back to semantic-only search on filtered resumes."
+            )
+            return self._semantic_only_on_filtered_resumes(
+                job_description,
+                resume_ids_filter,
+                top_k=top_k,
+            )
+
+        # Sort by keyword score, descending
+        sorted_by_keyword = sorted(
+            combined_keyword_scores.items(),
+            key=lambda x: x[1],
+            reverse=True,
+        )
+
+        # Unique union of IDs is just keys in combined_keyword_scores; we also keep ordering.
+        candidate_resume_ids = [rid for rid, _ in sorted_by_keyword]
+        logger.info(
+            f"[Keyword→Semantic] Candidate set after keyword phase: "
+            f"{len(candidate_resume_ids)} resumes"
+        )
+
+        # Optional: You can cap candidate size before semantic to control cost.
+        # For example, keep only top N by keyword:
+        # candidate_cutoff = max(top_k * 10, 50)
+        # candidate_resume_ids = candidate_resume_ids[:candidate_cutoff]
+
+        # ---- Step 5: Embed job description once ----
+        jd_vecs = self.embedding_service.encode_texts([job_description])
+        if not jd_vecs or len(jd_vecs) == 0:
+            raise QdrantError("[Keyword→Semantic] Failed to embed job description")
+        jd_vector = jd_vecs[0]
+
+        # ---- Step 6: Semantic search across 3 sections, restricted to candidate IDs ----
+        # We'll aggregate semantic scores per resume across:
+        #   - technical_skills
+        #   - professional_summary
+        #   - experiences
+        sections_for_semantic = ["technical_skills", "professional_summary", "experiences"]
+
+        semantic_scores: Dict[str, float] = defaultdict(float)
+
+        for section_key in sections_for_semantic:
+            collection_name = self.collections_mapping.get(section_key)
+            if not collection_name:
+                logger.warning(
+                    f"[Keyword→Semantic] Section '{section_key}' not in collections_mapping; "
+                    f"skipping."
+                )
+                continue
+
+            # Decide how many results to request per collection
+            search_limit = max(top_k * 20, len(candidate_resume_ids) * 5, 50)
+            logger.info(
+                f"[Keyword→Semantic] Semantic search on section '{section_key}' "
+                f"(collection={collection_name}) with limit={search_limit}"
+            )
+
+            section_results = self._search_collection(
+            collection_name=collection_name,
+            vector=jd_vector,
+            top_k=search_limit,
+            resume_ids_filter=candidate_resume_ids,
+        )
+
+            if not section_results:
+                logger.warning(
+                    f"[Keyword→Semantic] No semantic results for section '{section_key}'"
+                )
+                continue
+
+            for result in section_results:
+                rid = result.get("resume_id")
+                score = result.get("score", 0.0)
+                if not rid:
+                    continue
+
+                # We keep the max semantic score per resume across *all* sections
+                if score > semantic_scores[rid]:
+                    semantic_scores[rid] = score
+
+        if not semantic_scores:
+            logger.warning(
+                "[Keyword→Semantic] No semantic scores computed for candidates; "
+                "returning empty result."
+            )
+            return []
+
+        # ---- Step 7: Final ranking by semantic score only ----
+        final_sorted = sorted(
+            semantic_scores.items(),
+            key=lambda x: x[1],
+            reverse=True,
+        )
+
+        logger.info(
+            f"[Keyword→Semantic] Returning top {top_k} resumes from "
+            f"{len(final_sorted)} semantic candidates"
+        )
+
+        return final_sorted[:top_k]
+
+    def _semantic_only_on_filtered_resumes(
+        self,
+        job_description: str,
+        resume_ids_filter: List[str],
+        top_k: int = 3,
+    ) -> List[Tuple[str, float]]:
+        """
+        Fallback: semantic-only search across technical_skills, professional_summary,
+        and experiences, restricted to the given resume_ids_filter.
+        """
+        if not resume_ids_filter:
+            return []
+
+        jd_vecs = self.embedding_service.encode_texts([job_description])
+        if not jd_vecs or len(jd_vecs) == 0:
+            raise QdrantError("[Semantic-only] Failed to embed job description")
+        jd_vector = jd_vecs[0]
+
+        sections_for_semantic = ["technical_skills", "professional_summary", "experiences"]
+        semantic_scores: Dict[str, float] = defaultdict(float)
+
+        for section_key in sections_for_semantic:
+            collection_name = self.collections_mapping.get(section_key)
+            if not collection_name:
+                logger.warning(
+                    f"[Semantic-only] Section '{section_key}' not in collections_mapping; "
+                    f"skipping."
+                )
+                continue
+
+            search_limit = max(top_k * 20, len(resume_ids_filter) * 5, 50)
+
+            section_results = self._search_collection(
+                collection_name=collection_name,
+                query_vector=jd_vector,
+                top_k=search_limit,
+                resume_ids_filter=resume_ids_filter,
+            )
+
+            if not section_results:
+                continue
+
+            for result in section_results:
+                rid = result.get("resume_id")
+                score = result.get("score", 0.0)
+                if not rid:
+                    continue
+
+                if score > semantic_scores[rid]:
+                    semantic_scores[rid] = score
+
+        if not semantic_scores:
+            return []
+
+        final_sorted = sorted(
+            semantic_scores.items(),
+            key=lambda x: x[1],
+            reverse=True,
+        )
+
+        return final_sorted[:top_k]

@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import Dict, Any, Optional
 from src.utils.logger import get_logger
 logger = get_logger("Config")
+
 class Config:
     def __init__(self, config_path: Optional[str] = 'config.yaml'):
         self.base_path = Path(__file__).resolve().parents[2]

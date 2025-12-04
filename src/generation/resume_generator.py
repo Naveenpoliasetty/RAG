@@ -13,7 +13,7 @@ logger = get_logger(__name__)
 
 
 class ResumeGenerator:
-    def __init__(self, llm_json_fn: Callable):
+    def __init__(self, llm_json_fn: Callable, qdrant_manager, mongodb_manager):
         """
         Args:
             llm_json_fn: async function(prompt: str, model: BaseModel, max_tokens: int) -> BaseModel
@@ -21,8 +21,8 @@ class ResumeGenerator:
         """
         self.llm_json_fn = llm_json_fn
         # Use singleton instances
-        self.qdrant_manager = get_qdrant_manager()
-        self.mongodb_manager = get_mongodb_manager()
+        self.qdrant_manager = qdrant_manager
+        self.mongodb_manager = mongodb_manager
         
         # Load LLM config
         self.llm_config = load_llm_config()
@@ -314,7 +314,16 @@ class ResumeGenerator:
         # Add context about which experience we're generating
         system_prompt_with_context = EXPERIENCE_SYSTEM_PROMPT
         system_prompt_with_context += f"\n\nYou are generating experience #{experience_num} of {total_experiences}."
-        system_prompt_with_context += "\n\nCRITICAL: You MUST generate 15-20 detailed bullet points (80-100 words each) for this experience. Be comprehensive and include ALL relevant responsibilities and achievements from the source data. Do not summarize or truncate - include full details."
+        system_prompt_with_context += "\n\nIMPORTANT: You are receiving multiple source experiences for CONTEXT only. Use them as reference material."
+        system_prompt_with_context += "\n\nJOB ROLE FUSION RULES:"
+        system_prompt_with_context += "\n- Look at the job roles from the 3 source experiences"
+        system_prompt_with_context += "\n- If multiple sources have the same/similar job title, use that title"
+        system_prompt_with_context += "\n- If source roles are different but related, intelligently fuse them into one representative title"
+        system_prompt_with_context += "\n- DO NOT consider the job description when determining the job role"
+        system_prompt_with_context += "\n- Keep it authentic - use actual titles from the sources, don't invent new ones"
+        system_prompt_with_context += "\n- Prefer the most common or senior title from the sources"
+        system_prompt_with_context += "\n\nCRITICAL OUTPUT REQUIREMENT: Generate EXACTLY ONE experience object in the output array, NOT multiple."
+        system_prompt_with_context += "\n\nThis single experience MUST have 15-20 detailed bullet points (80-100 words each). Be comprehensive and include ALL relevant responsibilities and achievements from the source data. Do not summarize or truncate - include full details."
         
         try:
             # Call LLM for this specific experience
@@ -326,7 +335,7 @@ class ResumeGenerator:
                 temperature=0.8
             )
             
-            
+
             return exp_out
             
         except Exception as e:
@@ -417,8 +426,6 @@ class ResumeGenerator:
             "experience": [exp.dict() for exp in valid_experiences] if valid_experiences else []
         }
         
-
-        
         return final_output
 
 
@@ -482,10 +489,15 @@ class ResumeGenerator:
         experience_results = await asyncio.gather(*experience_tasks)
         
         # ------------ COMBINE RESULTS ------------
+        # Take only the FIRST experience from each LLM call to ensure we get exactly num_experiences
         all_experiences = []
-        for result in experience_results:
-            if result and result.experience:
-                all_experiences.extend(result.experience)
+        for i, result in enumerate(experience_results):
+            if result and result.experience and len(result.experience) > 0:
+                # Only take the first experience from this call
+                all_experiences.append(result.experience[0])
+                logger.info(f"Collected experience {i+1} from LLM call")
+            else:
+                logger.warning(f"Experience {i+1} LLM call returned no experiences")
         
         # ------------ HARD TRUNCATION ----------
 
@@ -500,6 +512,8 @@ class ResumeGenerator:
 
 
 async def orchestrate_resume_generation_individual_experiences(
+    qdrant_manager,
+    mongodb_manager,
     job_description: str, 
     job_roles: List[str],
     num_experiences: int = 3,  # Number of experiences to generate
@@ -512,10 +526,8 @@ async def orchestrate_resume_generation_individual_experiences(
     """
     Orchestrate with individual experience generation.
     """
-    
-    generator = ResumeGenerator(llm_json_fn=llm_json)
-    qdrant_manager = get_qdrant_manager()
-    retriever = ResumeIdsRetriever()
+    generator = ResumeGenerator(llm_json_fn=llm_json, qdrant_manager=qdrant_manager, mongodb_manager=mongodb_manager)
+    retriever = ResumeIdsRetriever(mongo_manager=mongodb_manager, qdrant_manager=qdrant_manager)
     
     # Filter by job roles
     filtered_resume_object_ids = retriever.get_resume_ids_by_job_roles(job_roles)
@@ -559,11 +571,18 @@ async def orchestrate_resume_generation_individual_experiences(
     )
     exp_rids = [rid for rid, score in exp_results]
     
+    # Debug logging
+    logger.info(f"Experience search returned {len(exp_rids)} resume IDs from Qdrant: {exp_rids[:5]}...")
+    
     # Fetch data
     mongodb_manager = get_mongodb_manager()
     summary_data = mongodb_manager.get_sections_by_resume_ids(summary_rids, "professional_summary")
     skills_data = mongodb_manager.get_sections_by_resume_ids(skills_rids, "technical_skills")
     exp_data = mongodb_manager.get_sections_by_resume_ids(exp_rids, "experiences")
+    
+    # Log how many documents were actually retrieved
+    logger.info(f"MongoDB returned {len(exp_data)} experience documents")
+    logger.info(f"Unique resume IDs in exp_data: {set(item.get('resume_id') for item in exp_data)}")
     
     # Generate with individual experiences
     result = await generator._generate_all_sections_direct_individual(
@@ -577,136 +596,3 @@ async def orchestrate_resume_generation_individual_experiences(
     )
     
     return result
-async def orchestrate_resume_generation(
-    job_description: str, 
-    job_roles: List[str],
-    semantic_weight: float = 0.7,
-    keyword_weight: float = 0.3,
-    top_k_summary: int = 3,
-    top_k_skills: int = 3,
-    top_k_experience: int = 6,
-    experience_count: int = None
-):
-    """
-    Orchestrate resume generation using section-level hybrid search.
-    Each section (summary, skills, experiences) is searched independently with hybrid scoring.
-    
-    Args:
-        job_description: Job description text
-        job_roles: List of job role strings to filter resumes by
-        semantic_weight: Weight for semantic similarity (default 0.7)
-        keyword_weight: Weight for keyword matching (default 0.3)
-        top_k_summary: Number of resumes to use for professional summary (default 3)
-        top_k_skills: Number of resumes to use for technical skills (default 3)
-        top_k_experience: Number of resumes to use for experiences (default 6)
-        experience_count: Number of experiences in the uploaded resume (optional)
-    """
-    # Separate the number of experiences to generate from the number of source resumes
-    num_experiences_to_generate = experience_count if experience_count else top_k_experience
-    if experience_count:
-        top_k_experience = experience_count * 3  # Get 3x source resumes
-    
-    generator = ResumeGenerator(llm_json_fn=llm_json)
-    qdrant_manager = get_qdrant_manager()
-    retriever = ResumeIdsRetriever()
-    
-    # First, filter resumes by job roles
-    filtered_resume_object_ids = retriever.get_resume_ids_by_job_roles(job_roles)
-    filtered_resume_ids = [str(oid) for oid in filtered_resume_object_ids]
-    
-    if not filtered_resume_ids:
-        logger.warning(f"No resumes found matching job roles: {job_roles}")
-        return {
-            "professional_summary": {},
-            "technical_skills": {},
-            "experience": {}
-        }
-    
-    logger.info(f"Found {len(filtered_resume_ids)} resumes matching job roles: {job_roles}")
-    
-    # Section-specific hybrid searches
-    logger.info("Performing section-level hybrid search...")
-    
-    # Search for best professional summaries
-    summary_results = qdrant_manager.match_resumes_by_section(
-        job_description=job_description,
-        section_key="professional_summary",
-        top_k=top_k_summary,
-        resume_ids_filter=filtered_resume_ids,
-        semantic_weight=semantic_weight,
-        keyword_weight=keyword_weight
-    )
-    summary_rids = [rid for rid, score in summary_results]
-    logger.info(f"Top {len(summary_rids)} resumes for professional_summary: {summary_rids}")
-    logger.info(f"Summary search returned {len(summary_results)} results with scores: {[(rid, f'{score:.3f}') for rid, score in summary_results]}")
-    
-    # Search for best technical skills
-    skills_results = qdrant_manager.match_resumes_by_section(
-        job_description=job_description,
-        section_key="technical_skills",
-        top_k=top_k_skills,
-        resume_ids_filter=filtered_resume_ids,
-        semantic_weight=semantic_weight,
-        keyword_weight=keyword_weight
-    )
-    skills_rids = [rid for rid, score in skills_results]
-    logger.info(f"Top {len(skills_rids)} resumes for technical_skills: {skills_rids}")
-    
-    # Search for best experiences
-    exp_results = qdrant_manager.match_resumes_by_section(
-        job_description=job_description,
-        section_key="experiences",
-        top_k=top_k_experience,
-        resume_ids_filter=filtered_resume_ids,
-        semantic_weight=semantic_weight,
-        keyword_weight=keyword_weight
-    )
-    exp_rids = [rid for rid, score in exp_results]
-    logger.info(f"Top {len(exp_rids)} resumes for experiences: {exp_rids}")
-    
-    # Fetch data from MongoDB for each section
-    mongodb_manager = get_mongodb_manager()
-    logger.info(f"Fetching summary data for resume IDs: {summary_rids}")
-    summary_data = mongodb_manager.get_sections_by_resume_ids(summary_rids, "professional_summary")
-    logger.info(f"Retrieved summary data for {len(summary_data)} resumes")
-    logger.info(f"Summary data details: {[{k: v for k, v in item.items() if k != 'professional_summary'} for item in summary_data]}")
-    
-    skills_data = mongodb_manager.get_sections_by_resume_ids(skills_rids, "technical_skills")
-    exp_data = mongodb_manager.get_sections_by_resume_ids(exp_rids, "experiences")
-    
-    # Generate sections using section-specific data
-    # Pass the actual number of experiences to generate, not the number of source resumes
-    result = await generator._generate_all_sections_direct(
-        job_description=job_description,
-        summary_data=summary_data,
-        skills_data=skills_data,
-        exp_data=exp_data,
-        top_k_summary=top_k_summary,
-        top_k_skills=top_k_skills,
-        top_k_experience=num_experiences_to_generate  # This is the number to GENERATE
-    )
-    
-    return result
-
-if __name__ == "__main__":
-    jd = """Job Description:
-We are seeking an experienced Oracle Sales Cloud Consultant to support implementation, customization, and optimization of Oracle CX Sales applications. The ideal candidate will work closely with business stakeholders to gather requirements, configure the system, and ensure seamless integration with other Oracle and third-party applications.
-
-Key Responsibilities:
-
-Implement and configure Oracle Sales Cloud modules (Leads, Opportunities, Accounts, Contacts, and Forecasting).
-Gather business requirements and translate them into functional solutions.
-Develop custom reports and dashboards using OTBI/BIP.
-Collaborate with technical teams for integrations and data migration.
-Provide end-user training, documentation, and post-implementation support.
-Required Skills:
-
-Hands-on experience in Oracle Sales Cloud (B2B/B2C) implementation and support.
-Strong understanding of sales automation processes and CRM best practices.
-Knowledge of OIC, Groovy scripting, and REST/SOAP integrations is a plus.
-Excellent communication and problem-solving skills.
-"""
-    job_roles = ["Oracle Sales Cloud Consultant", "Sales Cloud Consultant", "Oracle Consultant"]
-    result = asyncio.run(orchestrate_resume_generation(jd, job_roles))
-    with open("resume_generation/result.json", "w") as f:
-        json.dump(result, f, indent=4)

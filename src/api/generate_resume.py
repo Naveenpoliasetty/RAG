@@ -1,4 +1,4 @@
-from fastapi import APIRouter, File, Form, UploadFile
+from fastapi import APIRouter, File, Form, UploadFile, Depends
 from fastapi.responses import JSONResponse
 import json
 import os
@@ -11,11 +11,15 @@ logger = get_logger(__name__)
 router = APIRouter()
 
 
+
+
+
 @router.post("/generate_resume")
 async def generate_resume_endpoint(
     file: UploadFile = File(...),
     job_description: str = Form(...),
     related_jobs: str = Form(...),
+
     semantic_weight: float = Form(0.7),
     keyword_weight: float = Form(0.3)
 ):

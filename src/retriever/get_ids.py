@@ -9,10 +9,10 @@ import json
 logger = get_logger("DataRetrieverPipeline")
 
 class ResumeIdsRetriever:
-    def __init__(self):
+    def __init__(self, mongo_manager, qdrant_manager):
         # Use singleton instances
-        self.mongo_manager = get_mongodb_manager()
-        self.qdrant_manager = get_qdrant_manager()
+        self.mongo_manager = mongo_manager
+        self.qdrant_manager = qdrant_manager
     
     def get_resume_ids_by_job_roles(self, job_roles: List[str]) -> List[str]:
         """

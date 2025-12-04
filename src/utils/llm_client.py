@@ -14,6 +14,9 @@ load_dotenv()
 
 logger = get_logger(__name__)
 
+# Cache the OpenAI client to avoid reinitializing connection on every call
+_cached_openai_client: Optional[OpenAI] = None
+
 
 def load_llm_config() -> dict:
     """Load LLM configuration from config.yaml"""
@@ -26,13 +29,23 @@ def load_llm_config() -> dict:
 
 def get_openai_client() -> OpenAI:
     """
-    Create OpenAI client configured for RunPod vLLM server.
+    Create or return cached OpenAI client configured for RunPod vLLM server.
     
     RunPod vLLM servers expose OpenAI-compatible endpoints.
     Get your endpoint URL from RunPod dashboard -> Your Pod -> Endpoints
     
     The endpoint should be in format: https://<pod-id>-<port>.proxy.runpod.net/v1
+    
+    The client is cached to avoid reinitializing the connection on every call.
     """
+    global _cached_openai_client
+    
+    # Return cached client if it exists
+    if _cached_openai_client is not None:
+        return _cached_openai_client
+    
+    # Create new client (first call only)
+    logger.info("Initializing OpenAI client connection (first call)")
     llm_config = load_llm_config()
     
     # Get base_url: prioritize environment variable (.env file), then config.yaml
@@ -91,10 +104,12 @@ def get_openai_client() -> OpenAI:
     else:
         logger.info("No model specified - endpoint will use default model")
     
-    return OpenAI(
+    _cached_openai_client = OpenAI(
         base_url=base_url,
         api_key=api_key
     )
+    
+    return _cached_openai_client
 
 
 def get_llm_model() -> str:

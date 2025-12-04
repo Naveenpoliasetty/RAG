@@ -28,11 +28,10 @@ base_path = Path(__file__).resolve().parents[2]
 # -----------------------------------------------------------------------------
 # PIPELINE FUNCTIONS
 # -----------------------------------------------------------------------------
-class ScrapePipeline:
-    def __init__(self, batch_size: int = 50):
+class ScrapePipeline():
+    def __init__(self, mongo_manager: MongoDBManager = None,  batch_size: int = 50):
         self.batch_size = batch_size
-        
-        self.mongo_manager = MongoDBManager()
+        self.mongo_manager = mongo_manager
         
     def scrape_single_resume(self, url: str):
         """Scrape -> Validate -> Parse one resume end-to-end."""
@@ -262,7 +261,8 @@ class ScrapePipeline:
 
 def main():
     """Main function with MongoDB storage only."""
-    pipeline = ScrapePipeline(batch_size=20)
+    mongo_manager = MongoDBManager()
+    pipeline = ScrapePipeline(mongo_manager=mongo_manager, batch_size=20)
     
     try:
         # Run the complete pipeline

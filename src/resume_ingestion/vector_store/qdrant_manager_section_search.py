@@ -33,16 +33,22 @@
         jd_vector = jd_vecs[0]
         
         # Semantic search on this collection only
+        # Request more results to ensure we get top_k unique resume IDs
+        # (some resumes may have many chunks, so we need a higher multiplier)
+        search_limit = max(top_k * 20, 50)  # At least 20x top_k or 50, whichever is higher
+        logger.info(f"Section '{section_key}': Requesting {search_limit} search results (top_k={top_k})")
         search_results = self._search_collection(
             collection_name,
             jd_vector,
-            top_k=top_k * 5,  # Get more candidates for keyword re-ranking
+            top_k=search_limit,
             resume_ids_filter=resume_ids_filter
         )
         
         if not search_results:
             logger.warning(f"No results found for section '{section_key}'")
             return []
+        
+        logger.info(f"Section '{section_key}': Found {len(search_results)} search results (requested {search_limit})")
         
         # Extract unique resume IDs and their semantic scores
         resume_semantic_scores = {}
@@ -55,6 +61,31 @@
                     resume_semantic_scores[rid] = score
         
         resume_ids = list(resume_semantic_scores.keys())
+        logger.info(f"Section '{section_key}': Extracted {len(resume_ids)} unique resume IDs from {len(search_results)} search results")
+        
+        # If we don't have enough unique resume IDs, try requesting even more results
+        if len(resume_ids) < top_k and resume_ids_filter:
+            logger.warning(f"Section '{section_key}': Only found {len(resume_ids)} unique resume IDs, need {top_k}. "
+                         f"Trying to request more results...")
+            # Try requesting even more results (up to the filter size)
+            extended_limit = min(len(resume_ids_filter) * 5, 200)  # Request up to 5x filter size or 200
+            if extended_limit > search_limit:
+                logger.info(f"Section '{section_key}': Requesting {extended_limit} search results (extended)")
+                extended_results = self._search_collection(
+                    collection_name,
+                    jd_vector,
+                    top_k=extended_limit,
+                    resume_ids_filter=resume_ids_filter
+                )
+                # Merge results
+                for result in extended_results:
+                    rid = result.get("resume_id")
+                    score = result.get("score", 0.0)
+                    if rid:
+                        if rid not in resume_semantic_scores or score > resume_semantic_scores[rid]:
+                            resume_semantic_scores[rid] = score
+                resume_ids = list(resume_semantic_scores.keys())
+                logger.info(f"Section '{section_key}': After extended search, extracted {len(resume_ids)} unique resume IDs")
         
         # Extract keywords from job description
         jd_keywords = set(self._extract_keywords_from_text(job_description))
