@@ -139,7 +139,7 @@ def create_resume(resume_data: dict) -> str:
 # ------------------------------------------------------------
 
 def upload_to_gcs(bucket_name: str, file_path: str, destination_blob_name: str):
-    storage_client = storage.Client.from_service_account_json("/Users/naveenpoliasetty/Downloads/RAG-1/src/resume-477618-0c64e84c6bb0.json")
+    storage_client = storage.Client.from_service_account_json("src/resume-477618-0c64e84c6bb0.json")
     bucket = storage_client.bucket(bucket_name)
     blob = bucket.blob(destination_blob_name)
     blob.upload_from_filename(file_path)

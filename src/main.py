@@ -15,6 +15,8 @@ from src.core.db_manager import get_qdrant_manager, get_mongodb_manager
 from src.generation.resume_generator import orchestrate_resume_generation_individual_experiences
 from src.utils.logger import get_logger
 
+from src.generation.resume_writer import generate_and_upload_resume
+
 
 
 from src.utils.resume_updater import update_resume_sections
@@ -133,10 +135,9 @@ async def generate_resume_endpoint(
         )
 
         final_result = update_resume_sections(resume_dict, result)
+        urls = generate_and_upload_resume(final_result)
 
-
-
-        return JSONResponse(content=final_result)
+        return JSONResponse(content=urls)
 
     except Exception as e:
         logger.error(f"Error generating resume: {e}")
