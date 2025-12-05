@@ -12,9 +12,12 @@ def update_resume_sections(original_resume: dict, updated_sections: dict) -> dic
     """
     new_resume = deepcopy(original_resume)
 
-    # 1. Replace professional summary
+    # 1. Replace professional summary and extract job title as designation
     if "professional_summary" in updated_sections:
         new_resume["professional_summary"] = updated_sections["professional_summary"]["summaries"]
+        # Extract job title from summary and set as designation
+        if "job_title" in updated_sections["professional_summary"]:
+            new_resume["designation"] = updated_sections["professional_summary"]["job_title"]
 
     # 2. Replace technical skills
     if "technical_skills" in updated_sections:

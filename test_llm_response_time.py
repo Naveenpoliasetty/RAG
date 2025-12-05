@@ -60,7 +60,15 @@ async def test_llm_response_time():
             print(f"   - Total: {response.usage.total_tokens}")
         
         print("="*60)
-        
+
+
+        def print_class_inheritence(response_text):
+            print("\n Class Inheritence: Checking whether we have pydantic classes or not using type(response_text).mro()")
+            for cls in type(response_text).mro():
+                print(f"{cls.__module__}.{cls.__name__}")
+
+        print_class_inheritence(response_text)
+                
     except Exception as e:
         end_time = time.time()
         response_time = end_time - start_time

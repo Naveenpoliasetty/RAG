@@ -1,4 +1,4 @@
-from pydantic import BaseModel, EmailStr, HttpUrl, ValidationError
+from pydantic import BaseModel, EmailStr, HttpUrl, ValidationError, Field
 from typing import List, Optional
 import instructor
 from dotenv import load_dotenv
@@ -28,10 +28,10 @@ Follow these rules:
    - Name
    - Email
    - Phone number
-   - URLs (LinkedIn, portfolio, or personal websites)
+   - URLs
    - Professional summary - This contains a list of bullet points
    - Technical skills
-   - Education details (degree, institution, location, start and end years if available)
+   - Education details
    - Professional experiences — each experience must include:
        - Job title / role
        - Client name
@@ -74,25 +74,66 @@ other text or formatting before or after the JSON string.
     return retry_prompt
 
 class Experience(BaseModel):
-    client_name: str
-    duration: str
-    job_role: str
-    responsibilities: List[str]
-    environment: Optional[str]
+    client_name: str = Field(
+        ...,
+        description="The company, client, or organization where the candidate worked for this role."
+    )
+    duration: str = Field(
+        None,
+        description="Employment period for this role."
+    )
+    job_role: str = Field(
+        None,
+        description="The specific job title held during this experience."
+    )
+    responsibilities: List[str] = Field(
+        None,
+        description="A list of detailed responsibilities, achievements, or tasks performed in this role."
+    )
+    environment: Optional[List[str]] = Field(
+        ...,
+        description="List of technologies, tools, frameworks, or platforms used in this role. Leave null if not provided."
+    )
+
 
 class Resume(BaseModel):
-    name: str
-    phone_number: Optional[str]
-    email: Optional[EmailStr]
-    url: Optional[HttpUrl]
-    professional_summary: List[str]
-    technical_skills: List[str]
-    experiences: List[Experience]
-    
+    name: str = Field(
+        ...,
+        description="The full name of the candidate exactly as written in the resume."
+    )
+    phone_number: Optional[str] = Field(
+        None,
+        description="The candidate's phone number. Provide it as a string in any readable format. Leave null if missing."
+    )
+    email: Optional[EmailStr] = Field(
+        None,
+        description="The candidate’s email address. Must be a valid email format or null if missing."
+    )
+    url: Optional[List[HttpUrl]] = Field(
+        None,
+        description="A list of URLs from the resume."
+    )
+    designation: str = Field(
+        ...,
+        description="The primary job title or role the resume represents (e.g., 'Senior Software Engineer')."
+    )
+    professional_summary: List[str] = Field(
+        ...,
+        description="A list of bullet points summarizing the candidate’s profile, strengths, or career overview."
+    )
+    technical_skills: List[str] = Field(
+        ...,
+        description="A list of technical skills, tools, technologies, programming languages, or platforms mentioned in the resume."
+    )
+    experiences: List[Experience] = Field(
+        ...,
+        description="A list of professional experiences the candidate has had, each represented as an Experience object."
+    )
+    education: Optional[List[str]] = Field(
+        None,
+        description="A list of educational qualifications in plain text from the resume, merge all the education details into a single list."
+    )
 
-class ParseResumeRequest(BaseModel):
-    job_list: List[str]
-    job_description: str
 
 def doc_to_text(file_path):
     """

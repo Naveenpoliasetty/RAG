@@ -8,7 +8,8 @@ from contextlib import asynccontextmanager
 from typing import List
 import json
 
-from src.api.parser_resume import parse_resume
+from src.api import parser_resume
+from src.api.parser_resume import parse_resume, router
 from src.api.get_unique_job_roles import get_unique_job_roles
 from src.core.config import settings
 from src.core.db_manager import get_qdrant_manager, get_mongodb_manager
@@ -16,8 +17,6 @@ from src.generation.resume_generator import orchestrate_resume_generation_indivi
 from src.utils.logger import get_logger
 
 from src.generation.resume_writer import generate_and_upload_resume
-
-
 
 from src.utils.resume_updater import update_resume_sections
 logger = get_logger(__name__)
@@ -75,6 +74,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+app.include_router(parser_resume.router, prefix="/api/v1", tags=["Parser Resume"])
 
 # -----------------------------
 # Endpoints
@@ -136,6 +136,7 @@ async def generate_resume_endpoint(
 
         final_result = update_resume_sections(resume_dict, result)
         urls = generate_and_upload_resume(final_result)
+
 
         return JSONResponse(content=urls)
 

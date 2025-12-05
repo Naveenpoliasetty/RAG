@@ -73,7 +73,7 @@ llm_config:
   # NOTE: The serverless API endpoint (https://api.runpod.ai/v2/...) is NOT OpenAI-compatible
   #       and won't work with the OpenAI client wrapper
 
-  base_url: "https://api.runpod.ai/v2/0170v7vwr849i2/openai/v1"
+  base_url: "https://api.runpod.ai/v2/5f41xn4cfl0ud9/openai/v1"
   # RunPod API key (Bearer token)
   # You can also set this via RUNPOD_API_KEY or OPENAI_API_KEY environment variable  # Replace with your actual API key
   global_max_tokens: 4096

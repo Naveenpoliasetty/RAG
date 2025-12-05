@@ -7,6 +7,7 @@ from typing import List, Dict, Optional
 # ---------------------------------------------------------
 
 class SummaryOutput(BaseModel):
+    job_title: str = Field(description="The job title extracted from the job description")
     summaries: List[str]
 
 
