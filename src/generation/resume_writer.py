@@ -192,7 +192,6 @@ def upload_to_gcs(bucket_name: str, file_path: str, destination_blob_name: str):
     blob.upload_from_filename(file_path)
 
     # Public URL
-    # Note: With uniform bucket-level access, use IAM permissions instead of ACLs
     public_url = blob.public_url
 
     return public_url
