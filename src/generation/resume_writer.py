@@ -179,17 +179,23 @@ def create_resume(resume_data: dict) -> str:
 
     return filename
 
-
 # ------------------------------------------------------------
 # 2. UPLOAD TO GCS
 # ------------------------------------------------------------
+
 def upload_to_gcs(bucket_name: str, file_path: str, destination_blob_name: str):
     storage_client = storage.Client.from_service_account_json("src/resume-477618-0c64e84c6bb0.json")
     bucket = storage_client.bucket(bucket_name)
     blob = bucket.blob(destination_blob_name)
-    blob.upload_from_filename(file_path)
-    return f"gs://{bucket_name}/{destination_blob_name}"
 
+    # Upload
+    blob.upload_from_filename(file_path)
+
+    # Public URL
+    # Note: With uniform bucket-level access, use IAM permissions instead of ACLs
+    public_url = blob.public_url
+
+    return public_url
 
 # ------------------------------------------------------------
 # 3. MASTER FUNCTION
@@ -201,4 +207,4 @@ def generate_and_upload_resume(resume_data):
         file_path=local_file,
         destination_blob_name=os.path.basename(local_file)
     )
-    return {"local_file": local_file, "gcs_url": gcs_url}
+    return {"gcs_url": gcs_url}
