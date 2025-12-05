@@ -3,6 +3,7 @@ os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
 from fastapi import FastAPI, Request, File, Form, UploadFile, Depends
 from fastapi.responses import JSONResponse
+from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 from typing import List
 import json
@@ -62,6 +63,16 @@ def get_mongodb(request: Request):
     return request.app.state.mongodb
 
 
+# -----------------------------
+# CORS Config
+# -----------------------------
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=settings.ALLOWED_ORIGINS,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 app.include_router(parser_resume.router, prefix="/api/v1", tags=["Parser Resume"])
