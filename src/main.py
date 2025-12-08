@@ -135,6 +135,14 @@ async def generate_resume_endpoint(
             mongodb_manager=mongodb_manager
         )
 
+        # Check if we received a data error response
+        if isinstance(result, dict) and "data_error" in result:
+            logger.warning(f"Insufficient data found. Resume IDs attempted: {result.get('resume_ids', [])}")
+            return JSONResponse(content={
+                "data_error": result["data_error"],
+                "resume_ids": result.get("resume_ids", [])
+            })
+
         final_result = update_resume_sections(resume_dict, result)
         urls = generate_and_upload_resume(final_result)
 

@@ -28,6 +28,16 @@ async def test_llm_response_time():
     
     # Track response time
     start_time = time.time()
+        request_params = {
+        "model": get_llm_model(),  # Get model from config or use default
+        "response_model": output_model,
+        "messages": [ 
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt}
+        ],
+        "max_tokens": effective_max_tokens,
+        "temperature": temperature,
+    }
     
     try:
         response = client.chat.completions.create(

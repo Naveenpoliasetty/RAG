@@ -451,6 +451,48 @@ class ResumeGenerator:
         logger.info(f"Skills data count: {len(skills_data) if isinstance(skills_data, list) else 'N/A (not a list)'}")
         logger.info(f"Experience data count: {len(exp_data) if isinstance(exp_data, list) else 'N/A (not a list)'}")
         
+        # ------------ CHECK DATA SUFFICIENCY ------------
+        # Collect resume IDs from all sections
+        resume_ids_used = set()
+        if isinstance(summary_data, list):
+            for item in summary_data:
+                if isinstance(item, dict) and 'resume_id' in item:
+                    resume_ids_used.add(str(item['resume_id']))
+        if isinstance(skills_data, list):
+            for item in skills_data:
+                if isinstance(item, dict) and 'resume_id' in item:
+                    resume_ids_used.add(str(item['resume_id']))
+        if isinstance(exp_data, list):
+            for item in exp_data:
+                if isinstance(item, dict) and 'resume_id' in item:
+                    resume_ids_used.add(str(item['resume_id']))
+        
+        # Check if we have sufficient data
+        has_insufficient_data = False
+        
+        # Check if summary data is empty or insufficient
+        if not summary_data or (isinstance(summary_data, list) and len(summary_data) == 0):
+            logger.warning("Insufficient summary data")
+            has_insufficient_data = True
+        
+        # Check if skills data is empty or insufficient
+        if not skills_data or (isinstance(skills_data, list) and len(skills_data) == 0):
+            logger.warning("Insufficient skills data")
+            has_insufficient_data = True
+        
+        # Check if experience data is empty or insufficient
+        if not exp_data or (isinstance(exp_data, list) and len(exp_data) == 0):
+            logger.warning("Insufficient experience data")
+            has_insufficient_data = True
+        
+        # If we don't have enough data, return error response
+        if has_insufficient_data:
+            logger.error("Not enough relevant data found to generate resume")
+            return {
+                "data_error": "enough data not found",
+                "resume_ids": list(resume_ids_used)
+            }
+        
         # ------------ PROMPTS FOR SUMMARY AND SKILLS ------------
         summary_prompt = self._build_prompt(SUMMARY_USER_PROMPT, job_description, summary_data, top_k_summary)
         skills_prompt = self._build_prompt(SKILLS_USER_PROMPT, job_description, skills_data, top_k_skills)
@@ -458,9 +500,20 @@ class ResumeGenerator:
         # ------------ PREPARE EXPERIENCE BATCHES ------------
         experience_batches = self._prepare_experience_batches(exp_data, num_experiences)
         
+        # Check if all experience batches are empty
+        all_batches_empty = all(len(batch) == 0 for batch in experience_batches)
+        
         # Log experience batches
         for i, batch in enumerate(experience_batches):
             logger.info(f"Experience {i+1} batch size: {len(batch)}")
+        
+        # If all batches are empty, return error
+        if all_batches_empty:
+            logger.error("All experience batches are empty - not enough data")
+            return {
+                "data_error": "enough data not found",
+                "resume_ids": list(resume_ids_used)
+            }
         
         # ------------ ASYNC LLM CALLS ----------
         summary_task = asyncio.create_task(                 
@@ -488,6 +541,22 @@ class ResumeGenerator:
         summary_out, skills_out = await asyncio.gather(summary_task, skills_task)
         experience_results = await asyncio.gather(*experience_tasks)
         
+        # ------------ VALIDATE LLM RESULTS ------------
+        # Check if skills output is empty or has no meaningful data
+        if skills_out and hasattr(skills_out, 'skills'):
+            skills_dict = skills_out.skills if isinstance(skills_out.skills, dict) else {}
+            # Check if all categories are empty
+            all_categories_empty = all(
+                not values or len(values) == 0 
+                for values in skills_dict.values()
+            )
+            if all_categories_empty:
+                logger.error("LLM returned empty skills - insufficient relevant data")
+                return {
+                    "data_error": "enough data not found",
+                    "resume_ids": list(resume_ids_used)
+                }
+        
         # ------------ COMBINE RESULTS ------------
         # Take only the FIRST experience from each LLM call to ensure we get exactly num_experiences
         all_experiences = []
@@ -498,6 +567,14 @@ class ResumeGenerator:
                 logger.info(f"Collected experience {i+1} from LLM call")
             else:
                 logger.warning(f"Experience {i+1} LLM call returned no experiences")
+        
+        # Check if we have no valid experiences generated
+        if len(all_experiences) == 0:
+            logger.error("No valid experiences generated - insufficient relevant data")
+            return {
+                "data_error": "enough data not found",
+                "resume_ids": list(resume_ids_used)
+            }
         
         # ------------ HARD TRUNCATION ----------
 
@@ -534,7 +611,8 @@ async def orchestrate_resume_generation_individual_experiences(
     filtered_resume_ids = [str(oid) for oid in filtered_resume_object_ids]
     
     if not filtered_resume_ids:
-        return {"professional_summary": {}, "technical_skills": {}, "experience": []}
+        logger.warning("No resumes found matching the provided job roles")
+        return {"data_error": "enough data not found", "resume_ids": []}
     
     # Calculate how many source resumes we need for experiences
     # We need more source resumes since each experience gets unique data
