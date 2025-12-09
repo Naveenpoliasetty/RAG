@@ -1,4 +1,4 @@
-from pydantic import BaseModel, EmailStr, HttpUrl, ValidationError, Field
+from pydantic import BaseModel, EmailStr, HttpUrl, ValidationError, Field, field_validator
 from typing import List, Optional
 import instructor
 from dotenv import load_dotenv
@@ -133,6 +133,33 @@ class Resume(BaseModel):
         None,
         description="A list of educational qualifications in plain text from the resume, merge all the education details into a single list."
     )
+    
+    @field_validator('url', mode='before')
+    @classmethod
+    def add_scheme_to_urls(cls, v):
+        """Add https:// to URLs that don't have a scheme."""
+        if v is None:
+            return v
+        
+        if isinstance(v, str):
+            v = [v]
+        
+        if not isinstance(v, list):
+            return v
+        
+        result = []
+        for url in v:
+            if isinstance(url, str):
+                # Check if URL has a scheme (http://, https://, etc.)
+                if not url.startswith(('http://', 'https://', 'ftp://', 'ftps://')):
+                    # Add https:// prefix
+                    url = f'https://{url}'
+                result.append(url)
+            else:
+                # If it's already an HttpUrl object, keep it as is
+                result.append(url)
+        
+        return result
 
 
 def doc_to_text(file_path):
