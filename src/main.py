@@ -140,6 +140,7 @@ async def generate_resume_endpoint(
             logger.warning(f"Insufficient data found. Resume IDs attempted: {result.get('resume_ids', [])}")
             return JSONResponse(content={
                 "data_error": result["data_error"],
+                "error_code":420,
                 "resume_ids": result.get("resume_ids", [])
             })
 
