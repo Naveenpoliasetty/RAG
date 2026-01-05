@@ -1,11 +1,13 @@
 import re
 from typing import List, Optional
-import time, random #noqa
+import time
+import random  # noqa
 from bs4 import BeautifulSoup
 import requests
 from pydantic import BaseModel
 from src.utils.logger import get_logger
 logger = get_logger("Scrape")
+
 
 class Experience(BaseModel):
     job_role: str
@@ -29,11 +31,13 @@ class PostExtractionResult(BaseModel):
     missing_excerpt: str
     skipped_blocks: List[str]
     warnings: List[str]
-    
+
+
 def normalize_breaks(soup):
     """Convert <br> tags to newline text nodes so .get_text() uses them."""
     for br in soup.find_all("br"):
         br.replace_with("\n")
+
 
 def clean_whitespace(text):
     lines = [ln.strip() for ln in text.splitlines()]
@@ -42,6 +46,7 @@ def clean_whitespace(text):
     while lines and lines[-1] == "":
         lines.pop()
     return "\n".join([re.sub(r'\s+', ' ', ln) for ln in lines])
+
 
 def extract_job_role(soup):
     media_bodies = soup.find_all("div", class_=re.compile(r"media-body"))
@@ -54,9 +59,10 @@ def extract_job_role(soup):
                 return job_role
     return None
 
+
 def extract_post_body_safe(
     url: str,
-    target_class = "single-post-body",
+    target_class="single-post-body",
     class_regex: Optional[str] = None,
     allow_fallback: bool = True,
     debug: bool = False,
@@ -64,7 +70,7 @@ def extract_post_body_safe(
     retries: int = 3,
 ) -> PostExtractionResult:
     headers = {"User-Agent": "Mozilla/5.0 (X11; Linux x86_64)"}
-    
+
     for attempt in range(retries):
         try:
             with requests.Session() as session:
@@ -156,7 +162,8 @@ def extract_post_body_safe(
                             temp = temp.replace(item, "")
         missing_excerpt = temp.strip()[:800]
         if missing_excerpt:
-            warnings.append("Container has additional text not captured by structured tags.")
+            warnings.append(
+                "Container has additional text not captured by structured tags.")
 
     if "<script" in resp.text.lower() and (container_words == 0 or joined_words == 0):
         warnings.append("Page might be JS-rendered.")
@@ -164,8 +171,10 @@ def extract_post_body_safe(
     if debug:
         print("===== DEBUG INFO =====")
         print("Container classes:", container.get("class"))
-        print("Job roles found:", sum(1 for b in structured_content if "job_role" in b))
-        print("Paragraphs:", sum(1 for b in structured_content if b.get("type") == "p"))
+        print("Job roles found:", sum(
+            1 for b in structured_content if "job_role" in b))
+        print("Paragraphs:", sum(
+            1 for b in structured_content if b.get("type") == "p"))
         print("Lists:", sum(1 for b in structured_content if b.get("type") == "ul"))
         print("Skipped blocks:", len(skipped_blocks))
         print("Warnings:", warnings)
