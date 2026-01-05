@@ -1,7 +1,7 @@
 from typing import Dict, Any
-from src.utils.logger import get_logger
+#from src.utils.logger import get_logger
 import re
-logger = get_logger("Parser")
+#logger = get_logger("Parser")
 
 # Pre-compile regex patterns for better performance
 RESUME_PATTERNS = [
@@ -42,57 +42,59 @@ CLEANUP_PATTERNS = [
 def remove_resume_from_role(role: str) -> str:
     """
     Remove 'Resume' and its variations from job role.
-    
+
     Args:
         role: Raw job role string
-        
+
     Returns:
         Job role with Resume keywords removed
     """
     if not role:
         return ""
-    
+
     cleaned_role = role
     for pattern in RESUME_PATTERNS:
         cleaned_role = pattern.sub('', cleaned_role)
-    
+
     # Clean up extra spaces and punctuation
     for pattern, replacement in CLEANUP_PATTERNS:
         cleaned_role = pattern.sub(replacement, cleaned_role)
-    
+
     return cleaned_role
+
 
 def normalize_job_role(role: str) -> str:
     """
     Normalize job role by standardizing common variations.
-    
+
     Args:
         role: Raw job role string
-        
+
     Returns:
         Normalized job role string
     """
     if not role:
         return ""
-    
+
     # First remove Resume keywords from the role
     role = remove_resume_from_role(role)
-    
+
     if not role:
         return ""
-    
+
     # Convert to lowercase for case-insensitive comparison
     normalized = role.lower().strip()
-    
+
     # Standardize common abbreviations and spellings
     for pattern, replacement in JOB_ROLE_REPLACEMENTS:
         normalized = pattern.sub(replacement, normalized)
-    
+
     # Remove common prefixes/suffixes that don't change the core role
     for pattern in PREFIX_REMOVALS:
         normalized = pattern.sub('', normalized)
-    
+
     return normalized.strip()
+
 
 def parse_resume(json_data: Dict[str, Any]) -> Dict[str, Any]:
     raw_job_role = json_data.get("job_role", "")
@@ -103,21 +105,39 @@ def parse_resume(json_data: Dict[str, Any]) -> Dict[str, Any]:
         "technical_skills": [],
         "experiences": []
     }
-    
+
     structured_content = json_data.get("structured_content", [])
     if not structured_content:
         return resume
 
-    # --- Pre-normalize data for faster lookup ---
     for e in structured_content:
         e["text_norm"] = e.get("text", "").strip()
         e["text_upper"] = e["text_norm"].upper()
 
     # --- Identify section indices ---
-    section_idx = { "SUMMARY": None, "TECHNICAL SKILLS": None, "PROFESSIONAL EXPERIENCE": None }
+    section_idx = {"SUMMARY": None, "TECHNICAL SKILLS": None, "PROFESSIONAL EXPERIENCE": None}
+    
+    # regex patterns for section headers
+    # We strip trailing colons before matching, so the patterns don't need to handle them
+    SECTION_PATTERNS = [
+        (re.compile(r"^(?:PROFESSIONAL\s+)?SUMMARY$", re.IGNORECASE), "SUMMARY"),
+        (re.compile(r"^TECHNICAL\s+SKILLS$", re.IGNORECASE), "TECHNICAL SKILLS"),
+        (re.compile(r"^PROFESSIONAL\s+EXPERIENCE$", re.IGNORECASE), "PROFESSIONAL EXPERIENCE")
+    ]
+
     for i, e in enumerate(structured_content):
-        if e["type"] == "p" and e["text_upper"] in section_idx:
-            section_idx[e["text_upper"]] = i
+        # Use text_norm (original case, stripped) for regex with IGNORECASE
+        curr_text = re.sub(r"\s*:\s*$", "", e["text_norm"])
+        
+        if e["type"] == "p":
+             for pattern, section_key in SECTION_PATTERNS:
+                 if pattern.match(curr_text):
+                     # Only set if not already set (first match wins, or last? original logic overwrote commonly unique)
+                     # Original: section_idx[normalized_text] = i. If multiple appear, last one wins.
+                     # Let's keep overwriting to match original behavior, or check? 
+                     # Usually Resume headers appear once. 
+                     section_idx[section_key] = i
+                     break
 
     # --- Extract sections safely ---
     def slice_section(start_key, end_key=None):
@@ -128,7 +148,8 @@ def parse_resume(json_data: Dict[str, Any]) -> Dict[str, Any]:
         return structured_content[start+1:end] if end else structured_content[start+1:]
 
     summary_section = slice_section("SUMMARY", "TECHNICAL SKILLS")
-    skills_section = slice_section("TECHNICAL SKILLS", "PROFESSIONAL EXPERIENCE")
+    skills_section = slice_section(
+        "TECHNICAL SKILLS", "PROFESSIONAL EXPERIENCE")
     exp_section = slice_section("PROFESSIONAL EXPERIENCE")
 
     # --- Parse SUMMARY ---
@@ -151,7 +172,8 @@ def parse_resume(json_data: Dict[str, Any]) -> Dict[str, Any]:
             # Start new block
             if exp_data and exp_data["job_role"] and exp_data["responsibilities"]:
                 exp_blocks.append(exp_data)
-            exp_data = {"job_role": "", "responsibilities": [], "environment": None}
+            exp_data = {"job_role": "",
+                        "responsibilities": [], "environment": None}
             continue
 
         if exp_data is None:
