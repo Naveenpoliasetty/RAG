@@ -110,6 +110,50 @@ def parse_resume(json_data: Dict[str, Any]) -> Dict[str, Any]:
     if not structured_content:
         return resume
 
+    # --- Pre-normalize data for faster lookup ---
+    def preprocess_structured_content(content: list) -> list:
+        """
+        Splits merged headers using regex, e.g., 'PROFESSIONAL EXPERIENCECONFIDENTIAL'
+        becomes 'PROFESSIONAL EXPERIENCE' and 'CONFIDENTIAL'.
+        """
+        new_content = []
+        # sort headers by length desc to match long ones first (e.g. PROFESSIONAL SUMMARY before SUMMARY)
+        headers = ["PROFESSIONAL EXPERIENCE", "TECHNICAL SKILLS", "PROFESSIONAL SUMMARY", "SUMMARY"]
+        # Pattern captures: Group 1 = Header, Group 2 = The rest
+        # We use strict start ^ and case insensitive flag
+        pattern = re.compile(r"^(" + "|".join(map(re.escape, headers)) + r")\s*(.+)$", re.IGNORECASE)
+
+        for item in content:
+            if item.get("type") != "p":
+                new_content.append(item)
+                continue
+            
+            text = item.get("text", "").strip()
+            match = pattern.match(text)
+            
+            if match:
+                header_part = match.group(1).strip()
+                rest_part = match.group(2).strip()
+                
+                # Create two separate items
+                # 1. The Header
+                new_content.append({
+                    "type": "p",
+                    "text": header_part,
+                    # Copy other props if needed, simpler to just keep minimal for internal logic
+                })
+                # 2. The Rest (only if not empty)
+                if rest_part:
+                    new_content.append({
+                        "type": "p", # Assuming the rest is also text/paragraph
+                        "text": rest_part
+                    })
+            else:
+                new_content.append(item)
+        return new_content
+
+    structured_content = preprocess_structured_content(structured_content)
+
     for e in structured_content:
         e["text_norm"] = e.get("text", "").strip()
         e["text_upper"] = e["text_norm"].upper()
