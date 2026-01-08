@@ -90,9 +90,19 @@ class ResumeValidator:
             logger.error(f"Error processing {url}: {e}")
             return None
 
-    def run(self):
-        query = {} # Process all
+    def run(self, process_all=False):
+        if process_all:
+            query = {}
+            logger.info("Processing ALL resumes (Full Scan).")
+        else:
+            query = {"inconsistent_resume": {"$exists": False}}
+            logger.info("Processing only NEW resumes (Incremental).")
+            
         total_docs = self.failed_collection.count_documents(query)
+        if total_docs == 0:
+            logger.info("No resumes to validate.")
+            return
+
         cursor = self.failed_collection.find(query)
         
         logger.info(f"Starting validation for {total_docs} resumes with {self.max_workers} threads.")
