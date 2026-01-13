@@ -13,7 +13,11 @@ if __name__ == "__main__":
     # First command
     run_command("python3 -m src.data_acquisition.run_data_scraping")
 
+    
+
     # Second command
-    run_command("python3 -m src.resume_ingestion.main")
+    run_command("python3 -m src.resume_ingestion.main --mode until-empty --interval 10")
+
+
 
     print("🎉 All tasks completed successfully!")
