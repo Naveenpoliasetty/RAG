@@ -1,0 +1,75 @@
+
+JOB DESCRIPTION:
+hi man
+
+EXTRACTED PROFESSIONAL SUMMARY DATA (from top 3 resumes):
+[
+    {
+        "professional_summary_1": [
+            "7+ years of experience as Oracle PL/SQL Developer with expertise in design, development, testing and deployment of applications built on top of Oracle Database and also involved in support DBA activities.",
+            "Experience in working with Oracle 9i, 10g and 11g database.",
+            "Experience in Database design using Normalization and E/R Diagrams.",
+            "Experience includes extensive coding in PL/SQL, developing Packages, Procedures & Functions including Cursors and Exception handling.",
+            "Experience in writing database triggers & anonymous SQL scripts.",
+            "Expertise in using user defined and system defined Exceptions for Error handling.",
+            "Experience in using Oracle supplied packages such as DBMS FLASHBACK, DBMS SQL, DBMS JOB, UTL FILE for file handling.",
+            "Experience also includes writing sub queries and advanced SQL queries.",
+            "Experience in using Regular expression functions, string handling functions, aggregate functions etc.",
+            "Experience in Performance tuning (both SQL and PL - SQL Tuning) techniques using tools provided by Oracle like EXPLAIN PLAN, SQL*TRACE, TKPROF, AUTOTRACE, ORACLE HINTS etc.",
+            "Used Cost-Based Optimization (CBO).",
+            "Implemented PL/SQL advanced topics like Bulk Collects, Bulk Inserts Ref Cursors, Collections, Dynamic SQL.",
+            "Well versed with Oracle 11g PL/SQL new features.",
+            "Experience in the oracle Flashback techniques for restoring data using timestamp and SCN, flashback version query and transaction query.",
+            "Experience in managing Users, privileges and roles.",
+            "Experience in handling administrative tasks like table space management, User Management and database monitoring tasks.",
+            "Experience in Working with Backups both Logical and physical.",
+            "Experience in Recovering data from user errors using Flashback Technology.",
+            "Experience in Using RMAN for Backup and Recovery.",
+            "Refreshing development/test database from production using Export/Import. This was done so that the latest data is available in the development/test database.",
+            "Supported variety of critical and complex custom applications using Oracle databases and tools in Linux, UNIX and Window environments.",
+            "Involved in project development following SDLC starting from Analysis, Requirements, Design, Coding, Implementation and Support.",
+            "Extensive knowledge of New Business modules and Underwriter Workbench for Variable Universal Life Insurance products. Have a good understanding of Policy Servicing modules.",
+            "24 X 7 Production Database on Call Support.",
+            "Have a good understanding on Service Management modules like Incident, Problem and Change Management.",
+            "Received Global excellence award for outstanding contribution to the production support team for Managed Services to Confidential Insurance, USA.",
+            "Possess a sound understanding of the challenges in Production environment, combined with leadership ability, team player and creative problem solving skills in both strategic and tactical areas.",
+            "Strong interpersonal and problem solving skills."
+        ]
+    },
+    {
+        "professional_summary_2": [
+            "Overall 11+ years of experience in Information Technology and Manufacturing domain.",
+            "Having 8+ years of extensive experience in IT industry as Oracle applications VCP/SCM/MFG functional consultant and 3 Years of Manufacturing Domain experience.",
+            "Proficient in ASCP, GOP, Rapid Planning, Inventory, Purchasing, Order Management, BOM,WIP and Knowledge in APCC, Inventory Optimization (IO), General Ledger, Advanced Pricing, Costing and i Supplier.",
+            "Effectively involved in Requirement gathering, analyzing business requirements, System Mapping, Conference Room Pilot and Postproduction support.",
+            "4 Full life cycle implementation of Oracle E - Business Suite (MFG & SCM modules) & VCP Modules including design, setup, development, implementation and support of manufacturing systems, with excellent knowledge on VCP/MFG/SCM modules.",
+            "Extensive Experience in Oracle Business flows Procure to Pay (P2P) and Order to Cash (O2C).",
+            "Effectively involved in Oracle EBS R12& VCP Implementation, Enhancement and Production Support Projects.",
+            "Involved in preparation of various Functional Design Documents like MD050 for customizations by using AIM Methodology.",
+            "Experience in the preparation of Functional Design documents for Extensions, Data Conversion/Migrations, Inbound / Outbound interfaces.",
+            "Having very good knowledge in Preparing of different Documents by using Oracle Applications Implementation Methodology (AIM).",
+            "Involved in Unit, Integration (SIT), and User Acceptance Testing (UAT) through the development of test scripts",
+            "Good communication and Inter-Personal Skills and able to work as an active member maintaining good interaction with client and team members.",
+            "Great learning skills to adapt the rapid changing technologies and implementing the same at work."
+        ]
+    },
+    {
+        "professional_summary_3": [
+            "Overall 11+ years of experience in Information Technology and Manufacturing domain.",
+            "Having 8+ years of extensive experience in IT industry as Oracle applications VCP/SCM/MFG functional consultant and 3 Years of Manufacturing Domain experience.",
+            "Proficient in ASCP, GOP, Rapid Planning, Inventory, Purchasing, Order Management, BOM,WIP and Knowledge in APCC, Inventory Optimization (IO), General Ledger, Advanced Pricing, Costing and i Supplier.",
+            "Effectively involved in Requirement gathering, analyzing business requirements, System Mapping, Conference Room Pilot and Postproduction support.",
+            "4 Full life cycle implementation of Oracle E - Business Suite (MFG & SCM modules) & VCP Modules including design, setup, development, implementation and support of manufacturing systems, with excellent knowledge on VCP/MFG/SCM modules.",
+            "Extensive Experience in Oracle Business flows Procure to Pay (P2P) and Order to Cash (O2C).",
+            "Effectively involved in Oracle EBS R12& VCP Implementation, Enhancement and Production Support Projects.",
+            "Involved in preparation of various Functional Design Documents like MD050 for customizations by using AIM Methodology.",
+            "Experience in the preparation of Functional Design documents for Extensions, Data Conversion/Migrations, Inbound / Outbound interfaces.",
+            "Having very good knowledge in Preparing of different Documents by using Oracle Applications Implementation Methodology (AIM).",
+            "Involved in Unit, Integration (SIT), and User Acceptance Testing (UAT) through the development of test scripts",
+            "Good communication and Inter-Personal Skills and able to work as an active member maintaining good interaction with client and team members.",
+            "Great learning skills to adapt the rapid changing technologies and implementing the same at work."
+        ]
+    }
+]
+
+Generate a professional summary following all the rules above.

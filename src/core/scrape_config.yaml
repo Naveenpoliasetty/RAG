@@ -1,0 +1,43 @@
+# =========================================================
+# Resume Scraper Configuration
+# =========================================================
+
+scraper:
+  # Maximum number of pages to scrape per category
+  max_pages: 200
+
+  batch_size: 50
+
+  # Delay (seconds) between consecutive requests
+  request_delay:
+    min: 0.3
+    max: 0.7
+
+  # Number of threads for parallel category scraping
+  max_workers: 12
+
+  # User-Agent and other HTTP headers to mimic browser
+  headers:
+    User-Agent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/116.0 Safari/537.36"
+
+# =========================================================
+# Categories to scrape
+# =========================================================
+categories:
+  - "https://www.hireitpeople.com/resume-database/70-oracle-developers-resumes"
+  - "https://www.hireitpeople.com/resume-database/71-sap-resumes"
+  - "https://www.hireitpeople.com/resume-database/77-oracle-resumes"
+  - "https://www.hireitpeople.com/resume-database/78-oracle-dba-resumes"
+
+# =========================================================
+# Logging and output configuration
+# =========================================================
+
+# =========================================================
+# Error handling configuration
+# =========================================================
+error_handling:
+  # Retry count for transient errors
+  retry_attempts: 3
+  # Wait time between retries (seconds)
+  retry_delay: 2

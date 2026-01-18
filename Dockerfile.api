@@ -1,0 +1,74 @@
+# Production Dockerfile for FastAPI Resume Parser
+FROM python:3.12-slim
+
+# Build argument for cache busting
+ARG COMMIT_SHA=unknown
+LABEL project="resume-api"
+LABEL commit="${COMMIT_SHA}"
+
+# Set working directory
+WORKDIR /app
+
+# Install system dependencies including lxml and scipy requirements
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    curl \
+    libpq-dev \
+    libxml2-dev \
+    libxslt1-dev \
+    python3-dev \
+    gcc \
+    g++ \
+    gfortran \
+    libopenblas-dev \
+    liblapack-dev \
+    pkg-config \
+    && rm -rf /var/lib/apt/lists/*
+
+
+# Copy dependency files first for better caching
+COPY pyproject.toml .
+COPY uv.lock .
+COPY setup.py .
+
+# Install uv (fast Python package installer)
+RUN pip install --no-cache-dir uv
+
+# Copy application code (needed for package installation)
+# Using COMMIT_SHA to break cache when code changes
+COPY src/ ./src/
+COPY main.py .
+COPY run_scrp_ingestion.py .
+
+# Print commit SHA for verification
+RUN echo "Building image for commit: ${COMMIT_SHA}"
+
+# Install Python dependencies using uv
+RUN uv sync --frozen
+
+# Install the package itself (makes src modules importable)
+RUN uv pip install -e .
+
+# Download spaCy language model
+RUN uv pip install https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl
+
+# Add virtual environment to PATH so uvicorn is accessible
+ENV PATH="/app/.venv/bin:$PATH"
+
+# Create uploads directory
+RUN mkdir -p /app/uploads && chmod 777 /app/uploads
+
+# Set environment variables
+ENV PYTHONUNBUFFERED=1
+ENV PYTHONDONTWRITEBYTECODE=1
+
+# Expose port
+EXPOSE 8000
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
+    CMD curl -f http://localhost:8000/health || exit 1
+
+# Run the application
+CMD ["/app/.venv/bin/uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8000"]
+
