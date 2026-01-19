@@ -2,27 +2,34 @@ import os
 import sys
 import re
 import time
+import asyncio
 import requests
-from typing import List, Optional
+from typing import List, Optional, Any
 from datetime import datetime
 from pymongo import MongoClient
 from bs4 import BeautifulSoup
 from dotenv import load_dotenv
 
 # LangChain & Pydantic imports
-from langchain_openai import ChatOpenAI
+from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.pydantic_v1 import BaseModel, Field
 
 # Project imports
 sys.path.append(os.getcwd())
-from src.core.settings import config
-from src.utils.logger import get_logger
+try:
+    from src.core.config import settings
+    from src.utils.logger import get_logger
+except ImportError:
+    # Fallback for direct execution
+    sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
+    from src.core.config import settings
+    from src.utils.logger import get_logger
 
-# Load env vars (ensure OPENAI_API_KEY is loaded)
+# Load env vars
 load_dotenv()
 
-logger = get_logger("HybridScraper")
+logger = get_logger("HybridScraperAsync")
 
 # ----------------------------------------------------------------------
 # Pydantic Models for Structured Output
@@ -41,42 +48,62 @@ class ResumeSections(BaseModel):
     professional_experience: List[ExperienceItem] = Field(description="List of professional experience entries.")
 
 # ----------------------------------------------------------------------
-# Hybrid Scraper Class
+# Async Hybrid Scraper Class
 # ----------------------------------------------------------------------
 
-class HybridScraper:
+class AsyncHybridScraper:
     def __init__(self):
         # Database setup
-        self.client = MongoClient(config.mongodb_uri)
-        self.db = self.client[config.mongodb_database]
+        self.client = MongoClient(settings.MONGODB_URI)
+        self.db = self.client[settings.MONGODB_DATABASE]
         self.failed_collection = self.db["failed_resumes"]
         self.output_collection = self.db["parsed_resumes_hybrid"]
 
-        # LLM Setup
-        # Using gpt-4o for high quality extraction, or fallback to gpt-3.5-turbo if needed and cheaper
-        api_key = os.getenv("OPENAI_API_KEY")
-        if not api_key:
-            logger.error("OPENAI_API_KEY not found in environment variables.")
-            raise ValueError("OPENAI_API_KEY is required.")
-
-        self.llm = ChatOpenAI(model="gpt-4o-mini", temperature=0, openai_api_key=api_key)
-        self.structured_llm = self.llm.with_structured_output(ResumeSections)
-
-        # Prompt Template
-        self.prompt = ChatPromptTemplate.from_messages([
-            ("system", "You are an expert resume parser. Extract the following sections from the resume content: "
-                       "Summary, Technical Skills, and Professional Experience. "
-                       "Ensure 'Summary' is a list of strings. "
-                       "Ensure 'Technical Skills' is a list of strings. "
-                       "For 'Professional Experience', extract a list of jobs, where each job has a role, "
-                       "a list of responsibilities (bullet points), and an environment string (if available)."),
-            ("human", "Resume Content:\n\n{text}")
-        ])
+        # API Keys Setup
+        self.api_keys = settings.gemini_api_keys
         
-        self.chain = self.prompt | self.structured_llm
+        # Fallback to env var if not in settings, splitting by comma if it's a string
+        if not self.api_keys:
+            env_keys = os.getenv("GEMINI_API_KEYS")
+            if env_keys:
+                self.api_keys = [k.strip() for k in env_keys.split(",") if k.strip()]
+        
+        if not self.api_keys:
+            logger.error("No Gemini API keys found in settings or environment variables.")
+            raise ValueError("GEMINI_API_KEYS are required.")
 
-    def fetch_content(self, url: str, retries=3) -> Optional[str]:
-        """Fetches and cleans text content from the URL."""
+        logger.info(f"Loaded {len(self.api_keys)} Gemini API keys.")
+
+        # Initialize Chains (one per key)
+        self.chains = []
+        for key in self.api_keys:
+            llm = ChatGoogleGenerativeAI(
+                model="gemini-1.5-flash", # Efficient model
+                temperature=0,
+                google_api_key=key,
+                convert_system_message_to_human=True 
+            )
+            structured_llm = llm.with_structured_output(ResumeSections)
+            
+            prompt = ChatPromptTemplate.from_messages([
+                ("system", "You are an expert resume parser. Extract the following sections from the resume content: "
+                           "Summary, Technical Skills, and Professional Experience. "
+                           "Ensure 'Summary' is a list of strings. "
+                           "Ensure 'Technical Skills' is a list of strings. "
+                           "For 'Professional Experience', extract a list of jobs, where each job has a role, "
+                           "a list of responsibilities (bullet points), and an environment string (if available)."),
+                ("human", "Resume Content:\n\n{text}")
+            ])
+            
+            chain = prompt | structured_llm
+            self.chains.append(chain)
+
+        # Semaphore to limit total concurrency to number of keys * 2 (pipeline depth)
+        # However, rate limits are per key. So we simply assign one worker per key.
+        self.queue = asyncio.Queue()
+
+    def fetch_content_sync(self, url: str, retries=3) -> Optional[str]:
+        """Fetches and cleans text content from the URL (Blocking I/O)."""
         headers = {"User-Agent": "Mozilla/5.0"}
         for attempt in range(retries):
             try:
@@ -90,99 +117,146 @@ class HybridScraper:
         return None
 
     def _clean_html(self, html_content: str) -> str:
-        """Extracts text from the 'single-post-body' div or falls back to full body."""
+        """Extracts text from the html content."""
         soup = BeautifulSoup(html_content, "html.parser")
         
-        # Try specific container first (based on previous scripts)
+        # Try specific container first
         container = soup.find("div", class_="single-post-body")
         if container:
             text = container.get_text(separator="\n", strip=True)
         else:
-            # Fallback to body if specific container not found
             text = soup.body.get_text(separator="\n", strip=True) if soup.body else ""
             
         return text
 
-    def parse_resume(self, text: str) -> Optional[ResumeSections]:
-        """Invokes the LLM to parse the resume text."""
-        try:
-            result = self.chain.invoke({"text": text[:20000]}) # Truncate to avoid context limit if extreme
-            return result
-        except Exception as e:
-            logger.error(f"Error parsing resume with LLM: {e}")
-            return None
+    async def fetch_content(self, url: str) -> Optional[str]:
+        """Async wrapper for fetch_content_sync."""
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(None, self.fetch_content_sync, url)
 
-    def run(self, dry_run=False):
-        # 1. Get IDs of already processed resumes
-        existing_ids = self.output_collection.distinct("original_id")
-        
-        # 2. Query: Consistent resumes that are NOT in the output collection
-        query = {
-            "inconsistent_resume": False,
-            "_id": {"$nin": existing_ids}
-        } 
-        
-        total_docs = self.failed_collection.count_documents(query)
-        if total_docs == 0:
-            logger.info("No new consistent resumes to process.")
-            return
+    async def worker(self, chain_index: int):
+        """Worker that consumes tasks from the queue and uses a specific API key/chain."""
+        chain = self.chains[chain_index]
+        worker_id = f"Worker-{chain_index}"
+        logger.info(f"{worker_id} started.")
 
-        cursor = self.failed_collection.find(query)
-        
-        logger.info(f"Starting hybrid pipeline for {total_docs} NEW consistent resumes.")
-        
-        processed_count = 0
-        success_count = 0
-
-        for doc in cursor:
-            if dry_run and processed_count >= 1:
+        while True:
+            doc = await self.queue.get()
+            if doc is None:
+                # Sentinel to stop
+                self.queue.task_done()
                 break
 
             url = doc.get("source_url")
             doc_id = doc["_id"]
             
-            logger.info(f"Processing: {url}")
-            
-            # 1. Fetch Content
-            raw_text = self.fetch_content(url)
-            if not raw_text:
-                logger.warning(f"Could not fetch content for {url}")
-                continue
+            try:
+                logger.info(f"[{worker_id}] Processing: {url}")
+                
+                # 1. Fetch Content
+                raw_text = await self.fetch_content(url)
+                if not raw_text:
+                    logger.warning(f"[{worker_id}] Could not fetch content for {url}")
+                    self.queue.task_done()
+                    continue
 
-            # 2. Parse with LLM
-            parsed_data = self.parse_resume(raw_text)
-            
-            if parsed_data:
-                # 3. Prepare Document
-                output_doc = {
-                    "original_id": doc_id,
-                    "source_url": url,
-                    "inconsistent_resume": doc.get("inconsistent_resume"), # Should be False based on query
-                    "parsed_data": parsed_data.dict(),
-                    "parsed_at": datetime.now()
-                }
-
-                # 4. Save to DB
+                # 2. Parse with LLM (Async invoke)
+                # Truncate to avoid context limit (Gemini has large context but good to be safe/efficient)
                 try:
-                    self.output_collection.update_one(
-                        {"original_id": doc_id},
-                        {"$set": output_doc},
-                        upsert=True
-                    )
-                    logger.info(f"Successfully saved parsed data for {doc_id}")
-                    success_count += 1
+                    parsed_data = await chain.ainvoke({"text": raw_text[:30000]})
                 except Exception as e:
-                    logger.error(f"Failed to save to MongoDB: {e}")
-            else:
-                logger.warning(f"LLM failed to return structured data for {url}")
+                    logger.error(f"[{worker_id}] LLM Error for {url}: {e}")
+                    # Simple backoff if rate limited might be handled by langchain, but adding a small sleep here helps avoid rapid loops on errors
+                    await asyncio.sleep(2) 
+                    parsed_data = None
 
-            processed_count += 1
+                if parsed_data:
+                    # 3. Prepare Document
+                    output_doc = {
+                        "original_id": doc_id,
+                        "source_url": url,
+                        "inconsistent_resume": doc.get("inconsistent_resume"),
+                        "parsed_data": parsed_data.dict(),
+                        "parsed_at": datetime.now(),
+                        "model_used": "gemini-1.5-flash"
+                    }
 
-        logger.info(f"Pipeline finished. Processed: {processed_count}, Success: {success_count}")
+                    # 4. Save to DB (Blocking, so run in executor)
+                    loop = asyncio.get_running_loop()
+                    await loop.run_in_executor(None, self._save_to_db, doc_id, output_doc)
+                    logger.info(f"[{worker_id}] Success for {doc_id}")
+                else:
+                    logger.warning(f"[{worker_id}] Failed to parse {url}")
+
+            except Exception as e:
+                logger.error(f"[{worker_id}] Unexpected error processing {doc_id}: {e}")
+            finally:
+                self.queue.task_done()
+                # Optional: Add small delay to respect rate limits if needed, 
+                # though we have 5 keys so we can likely go full speed.
+                # await asyncio.sleep(1) 
+
+    def _save_to_db(self, doc_id, output_doc):
+        try:
+            self.output_collection.update_one(
+                {"original_id": doc_id},
+                {"$set": output_doc},
+                upsert=True
+            )
+        except Exception as e:
+            logger.error(f"Failed to save to MongoDB: {e}")
+
+    async def run_async(self, dry_run=False):
+        # 1. Get IDs of already processed resumes
+        existing_ids = self.output_collection.distinct("original_id")
+        
+        # 2. Query
+        query = {
+            "inconsistent_resume": False,
+            "_id": {"$nin": existing_ids}
+        }
+        
+        # Pull all docs to memory (assuming manageable size, else use cursor with batching)
+        # For batching, we would push to queue incrementally.
+        cursor = self.failed_collection.find(query)
+        # Convert to list to easily count and distribute
+        docs = list(cursor)
+        total_docs = len(docs)
+        
+        if total_docs == 0:
+            logger.info("No new consistent resumes to process.")
+            return
+
+        logger.info(f"Starting async pipeline for {total_docs} resumes with {len(self.chains)} concurrent workers.")
+        
+        if dry_run:
+            docs = docs[:5] # Limit to 5 for dry run
+            logger.info("Dry run: Processing subset of 5 resumes.")
+
+        # Fill Queue
+        for doc in docs:
+            self.queue.put_nowait(doc)
+
+        # Create Workers (one per chain/key)
+        tasks = []
+        for i in range(len(self.chains)):
+            task = asyncio.create_task(self.worker(i))
+            tasks.append(task)
+
+        # Wait for queue to process
+        await self.queue.join()
+
+        # Stop workers
+        for _ in range(len(self.chains)):
+            self.queue.put_nowait(None)
+        
+        await asyncio.gather(*tasks)
+        logger.info("All tasks completed.")
+
+    def run(self, dry_run=False):
+        asyncio.run(self.run_async(dry_run))
 
 if __name__ == "__main__":
-    # Check for dry run arg
     is_dry_run = "--dry-run" in sys.argv
-    
-    scraper = HybridScraper()
+    scraper = AsyncHybridScraper()
     scraper.run(dry_run=is_dry_run)
