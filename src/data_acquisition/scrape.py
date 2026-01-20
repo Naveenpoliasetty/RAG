@@ -9,6 +9,7 @@ from pydantic import BaseModel
 # logger = get_logger("Scrape")
 
 
+
 class Experience(BaseModel):
     job_role: str
     responsibilities: List[str]
