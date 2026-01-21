@@ -4,16 +4,17 @@ import re
 import time
 import asyncio
 import requests
+import json
 from typing import List, Optional, Any
 from datetime import datetime
 from pymongo import MongoClient
 from bs4 import BeautifulSoup
 from dotenv import load_dotenv
+from pydantic import BaseModel, Field
 
-# LangChain & Pydantic imports
-from langchain_google_genai import ChatGoogleGenerativeAI
-from langchain_core.prompts import ChatPromptTemplate
-from langchain_core.pydantic_v1 import BaseModel, Field
+# Google Gen AI imports
+from google import genai
+from google.genai import types
 
 # Project imports
 sys.path.append(os.getcwd())
@@ -74,32 +75,12 @@ class AsyncHybridScraper:
 
         logger.info(f"Loaded {len(self.api_keys)} Gemini API keys.")
 
-        # Initialize Chains (one per key)
-        self.chains = []
+        # Initialize Clients (one per key)
+        self.clients = []
         for key in self.api_keys:
-            llm = ChatGoogleGenerativeAI(
-                model="gemini-1.5-flash", # Efficient model
-                temperature=0,
-                google_api_key=key,
-                convert_system_message_to_human=True 
-            )
-            structured_llm = llm.with_structured_output(ResumeSections)
-            
-            prompt = ChatPromptTemplate.from_messages([
-                ("system", "You are an expert resume parser. Extract the following sections from the resume content: "
-                           "Summary, Technical Skills, and Professional Experience. "
-                           "Ensure 'Summary' is a list of strings. "
-                           "Ensure 'Technical Skills' is a list of strings. "
-                           "For 'Professional Experience', extract a list of jobs, where each job has a role, "
-                           "a list of responsibilities (bullet points), and an environment string (if available)."),
-                ("human", "Resume Content:\n\n{text}")
-            ])
-            
-            chain = prompt | structured_llm
-            self.chains.append(chain)
+            client = genai.Client(api_key=key)
+            self.clients.append(client)
 
-        # Semaphore to limit total concurrency to number of keys * 2 (pipeline depth)
-        # However, rate limits are per key. So we simply assign one worker per key.
         self.queue = asyncio.Queue()
 
     def fetch_content_sync(self, url: str, retries=3) -> Optional[str]:
@@ -134,11 +115,20 @@ class AsyncHybridScraper:
         loop = asyncio.get_running_loop()
         return await loop.run_in_executor(None, self.fetch_content_sync, url)
 
-    async def worker(self, chain_index: int):
-        """Worker that consumes tasks from the queue and uses a specific API key/chain."""
-        chain = self.chains[chain_index]
-        worker_id = f"Worker-{chain_index}"
+    async def worker(self, client_index: int):
+        """Worker that consumes tasks from the queue and uses a specific API key/client."""
+        client = self.clients[client_index]
+        worker_id = f"Worker-{client_index}"
         logger.info(f"{worker_id} started.")
+
+        system_instruction = (
+            "You are an expert resume parser. Extract the following sections from the resume content: "
+            "Summary, Technical Skills, and Professional Experience. "
+            "Ensure 'Summary' is a list of strings. "
+            "Ensure 'Technical Skills' is a list of strings. "
+            "For 'Professional Experience', extract a list of jobs, where each job has a role, "
+            "a list of responsibilities (bullet points), and an environment string (if available)."
+        )
 
         while True:
             doc = await self.queue.get()
@@ -160,41 +150,57 @@ class AsyncHybridScraper:
                     self.queue.task_done()
                     continue
 
-                # 2. Parse with LLM (Async invoke)
-                # Truncate to avoid context limit (Gemini has large context but good to be safe/efficient)
-                try:
-                    parsed_data = await chain.ainvoke({"text": raw_text[:30000]})
-                except Exception as e:
-                    logger.error(f"[{worker_id}] LLM Error for {url}: {e}")
-                    # Simple backoff if rate limited might be handled by langchain, but adding a small sleep here helps avoid rapid loops on errors
-                    await asyncio.sleep(2) 
-                    parsed_data = None
+                # 2. Parse with LLM (Async invoke if possible, otherwise wrap sync)
+                # Google Gen AI SDK v1 usually has async methods similar to sync but awaited
+                # Here we use the synchronous `client.models.generate_content` in a thread for safety if async is not fully clear or to avoid blocking loop
+                # The documentation says `client.aio.models.generate_content` for async. 
+                # Let's try wrapping the sync call first as it's safer if I'm not 100% sure about the async interface in 1.59.0
+                
+                def generate():
+                    return client.models.generate_content(
+                        model="gemini-2.5-flash",
+                        contents=f"Resume Content:\n\n{raw_text[:30000]}",
+                        config=types.GenerateContentConfig(
+                            system_instruction=system_instruction,
+                            response_mime_type="application/json",
+                            response_schema=ResumeSections
+                        )
+                    )
+
+                loop = asyncio.get_running_loop()
+                response = await loop.run_in_executor(None, generate)
+                
+                parsed_data = None
+                if response.parsed:
+                    parsed_data = response.parsed
+                elif response.text:
+                    try:
+                        # Fallback if parsed is not directly available but text is JSON
+                        parsed_data = ResumeSections.model_validate_json(response.text)
+                    except Exception:
+                        pass
 
                 if parsed_data:
                     # 3. Prepare Document
                     output_doc = {
                         "original_id": doc_id,
                         "source_url": url,
-                        "inconsistent_resume": doc.get("inconsistent_resume"),
-                        "parsed_data": parsed_data.dict(),
+                        "parsed_data": parsed_data.model_dump(), # pydantic v2
                         "parsed_at": datetime.now(),
-                        "model_used": "gemini-1.5-flash"
+                        "model_used": "gemini-2.5-flash"
                     }
 
                     # 4. Save to DB (Blocking, so run in executor)
-                    loop = asyncio.get_running_loop()
                     await loop.run_in_executor(None, self._save_to_db, doc_id, output_doc)
                     logger.info(f"[{worker_id}] Success for {doc_id}")
                 else:
-                    logger.warning(f"[{worker_id}] Failed to parse {url}")
+                    logger.warning(f"[{worker_id}] Failed to parse {url} (No valid JSON response)")
 
             except Exception as e:
-                logger.error(f"[{worker_id}] Unexpected error processing {doc_id}: {e}")
+                logger.error(f"[{worker_id}] Error processing {doc_id}: {e}")
+                await asyncio.sleep(2) # rate limit backoff
             finally:
                 self.queue.task_done()
-                # Optional: Add small delay to respect rate limits if needed, 
-                # though we have 5 keys so we can likely go full speed.
-                # await asyncio.sleep(1) 
 
     def _save_to_db(self, doc_id, output_doc):
         try:
@@ -207,39 +213,40 @@ class AsyncHybridScraper:
             logger.error(f"Failed to save to MongoDB: {e}")
 
     async def run_async(self, dry_run=False):
-        # 1. Get IDs of already processed resumes
-        existing_ids = self.output_collection.distinct("original_id")
-        
-        # 2. Query
-        query = {
-            "inconsistent_resume": False,
-            "_id": {"$nin": existing_ids}
-        }
-        
-        # Pull all docs to memory (assuming manageable size, else use cursor with batching)
-        # For batching, we would push to queue incrementally.
-        cursor = self.failed_collection.find(query)
-        # Convert to list to easily count and distribute
-        docs = list(cursor)
+        if dry_run:
+             # Just take any 5 documents for testing, ignoring status
+            cursor = self.failed_collection.find({}).limit(5)
+            docs = list(cursor)
+            logger.info(f"Dry run: Processing arbitrary sample of {len(docs)} resumes.")
+        else:
+            # 1. Get IDs of already processed resumes
+            existing_ids = self.output_collection.distinct("original_id")
+            
+            # 2. Query
+            query = {
+                "inconsistent_resume": False,
+                "_id": {"$nin": existing_ids}
+            }
+            
+            # Pull all docs to memory
+            cursor = self.failed_collection.find(query)
+            docs = list(cursor)
+
         total_docs = len(docs)
         
         if total_docs == 0:
-            logger.info("No new consistent resumes to process.")
+            logger.info("No resumes to process.")
             return
 
-        logger.info(f"Starting async pipeline for {total_docs} resumes with {len(self.chains)} concurrent workers.")
-        
-        if dry_run:
-            docs = docs[:5] # Limit to 5 for dry run
-            logger.info("Dry run: Processing subset of 5 resumes.")
+        logger.info(f"Starting async pipeline for {total_docs} resumes with {len(self.clients)} concurrent workers.")
 
         # Fill Queue
         for doc in docs:
             self.queue.put_nowait(doc)
 
-        # Create Workers (one per chain/key)
+        # Create Workers (one per client)
         tasks = []
-        for i in range(len(self.chains)):
+        for i in range(len(self.clients)):
             task = asyncio.create_task(self.worker(i))
             tasks.append(task)
 
@@ -247,7 +254,7 @@ class AsyncHybridScraper:
         await self.queue.join()
 
         # Stop workers
-        for _ in range(len(self.chains)):
+        for _ in range(len(self.clients)):
             self.queue.put_nowait(None)
         
         await asyncio.gather(*tasks)

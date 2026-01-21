@@ -14,7 +14,7 @@ class Settings(BaseSettings):
     # ============================
     # MongoDB Config
     # ============================
-    MONGODB_URI: str = "mongodb://localhost:27017/"
+    MONGODB_URI: str = "mongodb+srv://naveenpoliasetty:Naveen221003@cluster0.8jniohl.mongodb.net/?appName=Cluster0"
     MONGODB_DATABASE: str = "resumes_db"
     MONGODB_COLLECTION: str = "resumes"
 
