@@ -31,7 +31,13 @@ class Settings(BaseSettings):
     # (This is what was missing)
     # ============================
     openai_api_key: str = ""
-    gemini_api_keys: List[str] = []
+    gemini_api_keys: List[str] = [
+        "AIzaSyB_I5XwrfRIOl6ggyHBFH7P3gROSwijCyI",
+        "AIzaSyAwCt3Z2d21OTz3owrpEKkKeNR-HRLBEVQ",
+        "AIzaSyAQhbAT-7RLplxzb6QcVvZ9HY2ZXVGIHOs",
+        "AIzaSyA1U2ooJOZ3Hj6W1GU_3hWsbmDe24S4o3U",
+        "AIzaSyDkOpjwXGTLY0Lb7zohOY79lYQ-MJckTXY"
+        ]
     qdrant_host: str = "localhost"
     qdrant_port: int = 6333
     zenml_port: int = 8080
