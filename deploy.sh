@@ -107,8 +107,38 @@ step4_clone_repository() {
     if [ -d "/home/$USER/RAG" ]; then
         log_warning "Repository directory already exists"
         cd /home/$USER/RAG
-        log_info "Pulling latest changes..."
-        git pull || log_warning "Could not pull latest changes (may not be a git repo)"
+        
+        # Check if it's a git repository
+        if [ -d ".git" ]; then
+            log_info "Pulling latest changes..."
+            # Get current branch name
+            current_branch=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "main")
+            log_info "Current branch: $current_branch"
+            
+            # Fetch latest changes
+            git fetch origin || log_error "Failed to fetch from origin"
+            
+            # Reset to latest commit on current branch (or main/master)
+            if git show-ref --verify --quiet refs/remotes/origin/$current_branch; then
+                log_info "Resetting to origin/$current_branch..."
+                git reset --hard origin/$current_branch || log_error "Failed to reset to origin/$current_branch"
+            elif git show-ref --verify --quiet refs/remotes/origin/main; then
+                log_info "Resetting to origin/main..."
+                git reset --hard origin/main || log_error "Failed to reset to origin/main"
+            elif git show-ref --verify --quiet refs/remotes/origin/master; then
+                log_info "Resetting to origin/master..."
+                git reset --hard origin/master || log_error "Failed to reset to origin/master"
+            else
+                log_warning "Could not determine remote branch, using git pull..."
+                git pull || log_error "Failed to pull latest changes"
+            fi
+            
+            # Show current commit
+            current_commit=$(git log -1 --oneline 2>/dev/null || echo "unknown")
+            log_success "Updated to latest commit: $current_commit"
+        else
+            log_warning "Not a git repository. Skipping update."
+        fi
     else
         log_info "Please provide your repository URL:"
         read -p "Repository URL (or press Enter to skip): " repo_url
@@ -201,15 +231,30 @@ step7_deploy_services() {
     # Ensure we're in the right directory
     cd /home/$USER/RAG
     
-    # Build Docker images
-    log_info "Building Docker images..."
-    docker compose -f docker-compose.prod.yml build
+    # Get current commit SHA for build arg (if in git repo)
+    COMMIT_SHA="unknown"
+    if [ -d ".git" ]; then
+        COMMIT_SHA=$(git rev-parse HEAD 2>/dev/null || echo "unknown")
+        log_info "Building with commit SHA: $COMMIT_SHA"
+    fi
+    
+    # Stop existing containers to ensure clean rebuild
+    log_info "Stopping existing containers..."
+    docker compose -f docker-compose.prod.yml down 2>/dev/null || log_warning "No existing containers to stop"
+    
+    # Remove old images to force fresh build (optional but recommended for redeploy)
+    log_info "Cleaning up old images..."
+    docker image prune -af --filter "label=project=resume-api" 2>/dev/null || log_warning "Could not prune old images"
+    
+    # Build Docker images with --no-cache and --pull to ensure latest changes
+    log_info "Building Docker images (this may take a while)..."
+    docker compose -f docker-compose.prod.yml build --no-cache --pull --build-arg COMMIT_SHA=$COMMIT_SHA
     
     # Start services
     log_info "Starting services..."
     docker compose -f docker-compose.prod.yml up -d
     
-    log_success "Services started"
+    log_success "Services started with latest code"
 }
 
 # ============================================================================
