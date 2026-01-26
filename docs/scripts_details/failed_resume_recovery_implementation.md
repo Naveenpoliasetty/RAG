@@ -113,7 +113,11 @@ Successfully implemented a comprehensive failed resume recovery pipeline that us
 ✅ Added Groq API key:
 
 ```
+<<<<<<< HEAD
 GROQ_API_KEY= ###
+=======
+GROQ_API_KEY=g ###
+>>>>>>> 6d4f1f3... Handled API key level issues
 ```
 
 ---

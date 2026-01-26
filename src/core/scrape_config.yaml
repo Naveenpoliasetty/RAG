@@ -16,6 +16,8 @@ scraper:
   # Number of threads for parallel category scraping
   max_workers: 12
 
+  resume_validator_workers: 20
+
   # User-Agent and other HTTP headers to mimic browser
   headers:
     User-Agent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/116.0 Safari/537.36"
