@@ -1,9 +1,9 @@
 from .prompts import PARSE_RESUME_SYSTEM_PROMPT, PARSE_RESUME_USER_PROMPT, SUMMARY_SYSTEM_PROMPT, SUMMARY_USER_PROMPT, SKILLS_SYSTEM_PROMPT, SKILLS_USER_PROMPT, EXPERIENCE_SYSTEM_PROMPT, EXPERIENCE_USER_PROMPT
 import yaml
-from src.core.config import settings
+from src.utils.llm_client import load_llm_config, get_llm_model
 
-with open("../core/config.yaml", "r") as f:
-    llm_config = yaml.safe_load(f)
+llm_config = load_llm_config()
+default_model = get_llm_model()
 
 class LLMTask:
     def __init__(self, client, model, max_tokens):
@@ -24,8 +24,7 @@ class ResumeParserTask(LLMTask):
     def __init__(self, client):
         super().__init__(
             client=client,
-            model=llm_config["llm_config"]["model"],
-
+            model=get_llm_model(),
         )
 
     def build_messages(self, resume_text):
@@ -39,7 +38,7 @@ class Summary_experience_rewriteTask(LLMTask):
     def __init__(self, client):
         super().__init__(
             client=client,
-            model=llm_config["llm_config"]["model"],
+            model=get_llm_model(),
             max_tokens=180  # for summary it is less
         )
 
@@ -53,7 +52,7 @@ class TechnicalSkillsTask(LLMTask):
     def __init__(self, client):
         super().__init__(
             client=client,
-            model=llm_config["llm_config"]["model"],
+            model=get_llm_model(),
             max_tokens=200  # for skills it is less
         )
 
@@ -67,7 +66,7 @@ class ExperienceTask(LLMTask):
     def __init__(self, client):
         super().__init__(
             client=client,
-            model=llm_config["llm_config"]["model"],
+            model=get_llm_model(),
             max_tokens=450  # for experience it is more
         )
 

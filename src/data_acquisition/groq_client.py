@@ -1,6 +1,7 @@
 """
 Groq LLM client wrapper for resume data extraction.
-Uses Groq API with instructor for structured output and tracks rate limits.
+Uses Groq API with instructor for structured output.
+Implements unified RPM + TPM aware retry handling.
 """
 
 import os
@@ -27,40 +28,6 @@ _cached_instructor_client: Optional[instructor.Instructor] = None
 
 
 # ------------------------------------------------------------------
-# Token-aware pacing
-# ------------------------------------------------------------------
-
-def compute_token_delay(rate_info: dict, min_delay: float = 2.0) -> float:
-    """
-    Decide how long to wait before the next request based on token pressure.
-
-    Strategy:
-    - High remaining tokens -> normal delay
-    - Low remaining tokens -> slow down
-    - Zero tokens + daily -> stop pipeline
-    """
-    remaining_tokens = rate_info.get("remaining_tokens")
-    is_daily = rate_info.get("is_daily_limit", False)
-
-    if remaining_tokens is None:
-        return min_delay
-
-    # Hard stop on daily exhaustion
-    if remaining_tokens <= 0 and is_daily:
-        raise RuntimeError("DAILY TOKEN LIMIT EXHAUSTED")
-
-    # Token pressure thresholds (tuned for llama-3.1-8b-instant)
-    if remaining_tokens < 1000:
-        return max(min_delay, 20.0)
-    elif remaining_tokens < 3000:
-        return max(min_delay, 10.0)
-    elif remaining_tokens < 6000:
-        return max(min_delay, 5.0)
-
-    return min_delay
-
-
-# ------------------------------------------------------------------
 # Groq client initialization
 # ------------------------------------------------------------------
 
@@ -70,12 +37,11 @@ def get_groq_client() -> Groq:
     if _cached_groq_client is not None:
         return _cached_groq_client
 
-    logger.info("Initializing Groq client (first call)")
-
     api_key = os.getenv("GROQ_API_KEY")
     if not api_key:
         raise ValueError("GROQ_API_KEY not found in environment variables")
 
+    logger.info("Initializing Groq client (first call)")
     _cached_groq_client = Groq(api_key=api_key)
     logger.info("Groq client initialized successfully")
     return _cached_groq_client
@@ -89,26 +55,23 @@ def get_instructor_client() -> instructor.Instructor:
 
     logger.info("Initializing Groq instructor client (first call)")
     groq_client = get_groq_client()
-
     _cached_instructor_client = instructor.from_groq(
         groq_client,
         mode=instructor.Mode.JSON
     )
-
     logger.info("Groq instructor client initialized successfully")
     return _cached_instructor_client
 
 
 # ------------------------------------------------------------------
-# Rate limit extraction
+# Rate limit extraction (best effort – SDK may hide headers)
 # ------------------------------------------------------------------
 
-def log_rate_limits(response) -> dict:
+def extract_rate_info(response) -> dict:
     rate_info = {
         "remaining_requests": None,
         "remaining_tokens": None,
-        "reset_requests": None,
-        "limit_exhausted": False,
+        "reset": None,
         "is_daily_limit": False,
     }
 
@@ -116,53 +79,105 @@ def log_rate_limits(response) -> dict:
         if hasattr(response, "_raw_response"):
             headers = response._raw_response.headers
 
-            remaining_requests = headers.get("x-ratelimit-remaining-requests")
-            remaining_tokens = headers.get("x-ratelimit-remaining-tokens")
-            reset_requests = headers.get("x-ratelimit-reset-requests")
-
-            if remaining_requests is not None:
-                rate_info["remaining_requests"] = int(remaining_requests)
-
-            if remaining_tokens is not None:
-                rate_info["remaining_tokens"] = int(remaining_tokens)
-
-            rate_info["reset_requests"] = reset_requests
-
-            logger.info(
-                f"📊 Groq Rate Limits | "
-                f"Requests left: {remaining_requests} | "
-                f"Tokens left: {remaining_tokens}"
+            rate_info["remaining_requests"] = (
+                int(headers["x-ratelimit-remaining-requests"])
+                if "x-ratelimit-remaining-requests" in headers else None
             )
+            rate_info["remaining_tokens"] = (
+                int(headers["x-ratelimit-remaining-tokens"])
+                if "x-ratelimit-remaining-tokens" in headers else None
+            )
+            rate_info["reset"] = headers.get("x-ratelimit-reset-requests")
 
-            # Detect daily vs per-minute reset
-            if reset_requests and any(c in reset_requests for c in ["h", "m", "d"]):
+            if rate_info["reset"] and any(c in rate_info["reset"] for c in ["h", "m", "d"]):
                 rate_info["is_daily_limit"] = True
 
-            if (
-                (rate_info["remaining_requests"] is not None and rate_info["remaining_requests"] <= 0)
-                or
-                (rate_info["remaining_tokens"] is not None and rate_info["remaining_tokens"] <= 0)
-            ):
-                if rate_info["is_daily_limit"]:
-                    rate_info["limit_exhausted"] = True
-                    logger.warning("🛑 DAILY RATE LIMIT EXHAUSTED")
-                else:
-                    logger.warning("⚠️ Per-minute rate limit reached")
-
-            if rate_info["remaining_tokens"] is not None:
-                logger.debug(
-                    f"🧠 Token pressure check — remaining tokens: "
-                    f"{rate_info['remaining_tokens']}"
-                )
-
     except Exception as e:
-        logger.warning(f"Could not extract rate limit info: {e}")
+        logger.debug(f"Rate info unavailable: {e}")
 
     return rate_info
 
 
 # ------------------------------------------------------------------
-# Synchronous structured output (token + request aware)
+# 🔥 SINGLE DECISION FUNCTION (THIS IS THE CORE)
+# ------------------------------------------------------------------
+
+def decide_wait_time_on_429(
+    attempt: int,
+    rate_info: dict,
+    prompt_length_chars: int,
+) -> tuple[float, bool]:
+    """
+    Decide how long to wait after a 429 and whether to stop the pipeline.
+
+    Returns:
+        (wait_seconds, should_stop)
+    """
+
+    remaining_requests = rate_info.get("remaining_requests")
+    remaining_tokens = rate_info.get("remaining_tokens")
+    is_daily = rate_info.get("is_daily_limit", False)
+
+    # ------------------------------------------------------------
+    # Case 1: HARD DAILY EXHAUSTION
+    # ------------------------------------------------------------
+    if is_daily and (
+        remaining_requests == 0 or remaining_tokens == 0
+    ):
+        logger.error("🛑 DAILY LIMIT EXHAUSTED — stopping pipeline")
+        return 0.0, True
+
+    # ------------------------------------------------------------
+    # Case 2: TOKEN-PER-MINUTE PRESSURE (MOST COMMON FOR RESUMES)
+    # ------------------------------------------------------------
+    if (
+        remaining_tokens is not None and remaining_tokens <= 1000
+    ) or (
+        remaining_tokens is None and prompt_length_chars > 8000
+    ):
+        # Resume workload tuned escalation
+        wait_schedule = [15, 30, 45, 60]
+        wait_time = wait_schedule[min(attempt, len(wait_schedule) - 1)]
+
+        logger.warning(
+            f"⚠️ TPM throttling detected — waiting {wait_time}s "
+            f"(attempt={attempt}, remaining_tokens={remaining_tokens})"
+        )
+        return wait_time, False
+
+    # ------------------------------------------------------------
+    # Case 3: REQUEST-PER-MINUTE PRESSURE
+    # ------------------------------------------------------------
+    if remaining_requests is not None and remaining_requests <= 2:
+        wait_schedule = [5, 10, 20, 30]
+        wait_time = wait_schedule[min(attempt, len(wait_schedule) - 1)]
+
+        logger.warning(
+            f"⚠️ RPM throttling detected — waiting {wait_time}s "
+            f"(attempt={attempt}, remaining_requests={remaining_requests})"
+        )
+        return wait_time, False
+
+    # ------------------------------------------------------------
+    # Case 4: UNKNOWN (SDK HID HEADERS) — INFER FROM CONTEXT
+    # ------------------------------------------------------------
+    if prompt_length_chars > 8000:
+        wait_time = 30
+        logger.warning(
+            f"⚠️ 429 with hidden headers — assuming TPM pressure, waiting {wait_time}s"
+        )
+        return wait_time, False
+
+    # ------------------------------------------------------------
+    # Fallback
+    # ------------------------------------------------------------
+    fallback = min(10 * (attempt + 1), 30)
+    logger.warning(f"⚠️ 429 fallback wait {fallback}s")
+    return fallback, False
+
+
+# ------------------------------------------------------------------
+# Main synchronous structured output function
 # ------------------------------------------------------------------
 
 def groq_structured_output_sync(
@@ -172,29 +187,14 @@ def groq_structured_output_sync(
     model: str = "llama-3.1-8b-instant",
     max_tokens: int = 4000,
     temperature: float = 0.3,
-    max_retries: int = 3,
+    max_retries: int = 4,
 ) -> tuple[Optional[BaseModel], dict]:
-    """
-    Synchronous Groq structured output with:
-    - RPM control
-    - TPM-aware pacing
-    - Safe retries
-    """
-
-    RATE_LIMIT_DELAY = 2.0  # 30 RPM → 2s baseline
-
-    logger.info(f"Making Groq API call with model: {model}")
-    logger.debug(f"User prompt length: {len(user_prompt)} characters")
 
     client = get_instructor_client()
+    prompt_length = len(user_prompt)
 
     for attempt in range(max_retries):
         try:
-            if attempt > 0:
-                backoff = (2 ** attempt) + random.uniform(0, 1)
-                logger.info(f"Retry {attempt}/{max_retries} — waiting {backoff:.1f}s")
-                time.sleep(backoff)
-
             response = client.chat.completions.create(
                 model=model,
                 messages=[
@@ -206,45 +206,44 @@ def groq_structured_output_sync(
                 temperature=temperature,
             )
 
-            rate_info = log_rate_limits(response)
+            logger.info(f"✅ Groq call successful — {response_model.__name__}")
+            return response, extract_rate_info(response)
 
-            # Unified pacing for NEXT request
-            try:
-                token_delay = compute_token_delay(rate_info, min_delay=RATE_LIMIT_DELAY)
-                pacing_delay = max(RATE_LIMIT_DELAY, token_delay)
+        except Exception as e:
+            if "429" not in str(e):
+                logger.error(f"❌ Groq call failed: {e}")
+                raise
 
-                logger.info(
-                    f"⏱️ Pacing next request by {pacing_delay:.1f}s "
-                    f"(remaining tokens: {rate_info.get('remaining_tokens')})"
-                )
+            logger.warning(f"⚠️ 429 encountered (attempt {attempt + 1}/{max_retries})")
 
-                time.sleep(pacing_delay)
+            rate_info = {}
+            if hasattr(e, "response"):
+                try:
+                    rate_info = extract_rate_info(e.response)
+                except Exception:
+                    pass
 
-            except RuntimeError as stop_err:
-                logger.error(str(stop_err))
+            wait_time, should_stop = decide_wait_time_on_429(
+                attempt=attempt,
+                rate_info=rate_info,
+                prompt_length_chars=prompt_length,
+            )
+
+            if should_stop:
                 return None, {
-                    "remaining_requests": rate_info.get("remaining_requests", 0),
+                    "remaining_requests": 0,
                     "remaining_tokens": 0,
                     "limit_exhausted": True,
                     "is_daily_limit": True,
                 }
 
-            logger.info(f"✅ Groq API call successful — {response_model.__name__}")
-            return response, rate_info
+            time.sleep(wait_time)
+            continue
 
-        except Exception as e:
-            if "429" in str(e):
-                logger.warning(f"⚠️ 429 Rate limit error: {e}")
-                if attempt == max_retries - 1:
-                    return None, {
-                        "remaining_requests": 0,
-                        "remaining_tokens": 0,
-                        "limit_exhausted": False,
-                        "is_daily_limit": False,
-                    }
-                continue
-
-            logger.error(f"❌ Groq API call failed: {e}")
-            raise
-
-    raise RuntimeError("Groq call failed after max retries")
+    logger.error("❌ Max retries exceeded")
+    return None, {
+        "remaining_requests": None,
+        "remaining_tokens": None,
+        "limit_exhausted": False,
+        "is_daily_limit": False,
+    }

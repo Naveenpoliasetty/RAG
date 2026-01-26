@@ -19,24 +19,46 @@ _cached_openai_client: Optional[OpenAI] = None
 
 
 def load_llm_config() -> dict:
-    """Load LLM configuration from config.yaml"""
-    # Path: src/utils/llm_client.py -> src/core/config.yaml
+    """Load the raw llm_config from config.yaml"""
     config_path = Path(__file__).parent.parent / "core" / "config.yaml"
     with open(config_path, "r") as f:
         config = yaml.safe_load(f)
     return config.get("llm_config", {})
 
 
+def get_current_provider() -> str:
+    """Determine the current LLM provider from environment or config."""
+    llm_config = load_llm_config()
+    # Priority: Environment variable > config.yaml > default "runpod"
+    provider = os.getenv("LLM_PROVIDER") or llm_config.get("provider", "runpod")
+    return provider.lower()
+
+
+def get_provider_config(provider: Optional[str] = None) -> dict:
+    """
+    Get the configuration for a specific provider, or the current one if not specified.
+    Returns a merged dictionary with global settings and provider-specific overrides.
+    """
+    llm_config = load_llm_config()
+    if provider is None:
+        provider = get_current_provider()
+    
+    provider_settings = llm_config.get(provider, {})
+    
+    # Create a merged config so top-level settings like SUMMARY_MAX_TOKENS are available
+    merged_config = llm_config.copy()
+    # Remove the provider sections from the top level to avoid confusion
+    if "runpod" in merged_config: del merged_config["runpod"]
+    if "groq" in merged_config: del merged_config["groq"]
+    
+    # Update with provider-specific overrides
+    merged_config.update(provider_settings)
+    return merged_config
+
+
 def get_openai_client() -> OpenAI:
     """
-    Create or return cached OpenAI client configured for RunPod vLLM server.
-    
-    RunPod vLLM servers expose OpenAI-compatible endpoints.
-    Get your endpoint URL from RunPod dashboard -> Your Pod -> Endpoints
-    
-    The endpoint should be in format: https://<pod-id>-<port>.proxy.runpod.net/v1
-    
-    The client is cached to avoid reinitializing the connection on every call.
+    Create or return cached OpenAI client configured for the selected provider (RunPod or Groq).
     """
     global _cached_openai_client
     
@@ -44,65 +66,35 @@ def get_openai_client() -> OpenAI:
     if _cached_openai_client is not None:
         return _cached_openai_client
     
-    # Create new client (first call only)
-    logger.info("Initializing OpenAI client connection (first call)")
-    llm_config = load_llm_config()
+    provider = get_current_provider()
+    logger.info(f"Initializing OpenAI client for provider: {provider}")
     
-    # Get base_url: prioritize environment variable (.env file), then config.yaml
-    base_url = os.getenv("RUNPOD_BASE_URL") or llm_config.get("base_url")
-    
-    # Get API key: prioritize environment variables (.env file), then config.yaml
-    # Priority: RUNPOD_API_KEY > OPENAI_API_KEY > config.yaml api_key
-    api_key = (
-        os.getenv("RUNPOD_API_KEY") 
-        or os.getenv("OPENAI_API_KEY")
-        or llm_config.get("api_key")
-        or "dummy-key"  # Fallback to prevent errors, but will likely fail auth
+    config = get_provider_config(provider)
+
+    # Determine Base URL
+    # Priority: LLM_BASE_URL (env) -> Provider-specific env -> config.yaml
+    base_url = (
+        os.getenv("LLM_BASE_URL") or 
+        os.getenv(f"{provider.upper()}_BASE_URL") or 
+        config.get("base_url")
     )
     
-    # Log where configuration is coming from for debugging
-    if os.getenv("RUNPOD_BASE_URL"):
-        logger.debug("Using base_url from RUNPOD_BASE_URL environment variable")
-    elif llm_config.get("base_url"):
-        logger.debug("Using base_url from config.yaml")
-    
-    if os.getenv("RUNPOD_API_KEY"):
-        logger.debug("Using API key from RUNPOD_API_KEY environment variable")
-    elif os.getenv("OPENAI_API_KEY"):
-        logger.debug("Using API key from OPENAI_API_KEY environment variable")
-    elif llm_config.get("api_key"):
-        logger.debug("Using API key from config.yaml")
-    else:
-        logger.warning("No API key found in environment variables or config.yaml")
+    # Determine API Key
+    # Priority: LLM_API_KEY (env) -> Provider-specific env -> config.yaml
+    api_key = (
+        os.getenv("LLM_API_KEY") 
+        or os.getenv(f"{provider.upper()}_API_KEY")
+        or config.get("api_key")
+        or "dummy-key"
+    )
     
     if not base_url:
-        raise ValueError(
-            "RunPod endpoint not configured. Please set 'base_url' in config.yaml "
-            "or set RUNPOD_BASE_URL environment variable.\n"
-            "For RunPod vLLM servers, use the OpenAI-compatible endpoint format:\n"
-            "Format: https://<pod-id>-<port>.proxy.runpod.net/v1\n"
-            "Get your endpoint URL from RunPod dashboard -> Your Pod -> Endpoints"
-        )
+        raise ValueError(f"Base URL not configured for provider '{provider}'")
     
-    # Warn if using serverless API endpoint (not OpenAI-compatible)
-    # But allow if it has /openai/v1 in the path (RunPod serverless with OpenAI wrapper)
-    if "api.runpod.ai/v2" in base_url and "/openai/v1" not in base_url:
-        logger.warning(
-            "The endpoint URL appears to be a RunPod serverless API endpoint, "
-            "which is NOT OpenAI-compatible. For vLLM servers, you need the "
-            "OpenAI-compatible endpoint (format: https://<pod-id>-<port>.proxy.runpod.net/v1). "
-            "Get it from RunPod dashboard -> Your Pod -> Endpoints"
-        )
-    
-    # Ensure base_url doesn't have trailing slash (OpenAI client adds paths)
+    # Ensure base_url doesn't have trailing slash
     base_url = base_url.rstrip('/')
     
-    logger.info(f"Using RunPod endpoint: {base_url}")
-    model_name = llm_config.get('model')
-    if model_name:
-        logger.info(f"Using model: {model_name}")
-    else:
-        logger.info("No model specified - endpoint will use default model")
+    logger.info(f"Using {provider} endpoint: {base_url}")
     
     _cached_openai_client = OpenAI(
         base_url=base_url,
@@ -114,16 +106,25 @@ def get_openai_client() -> OpenAI:
 
 def get_llm_model() -> str:
     """
-    Get the LLM model name from config.
-    Returns the configured model, or a default model name that RunPod endpoints typically use.
-    The default is based on what RunPod vLLM servers commonly use.
+    Get the LLM model name for the current provider.
     """
-    llm_config = load_llm_config()
-    model = llm_config.get("model")
+    provider = get_current_provider()
+    config = get_provider_config(provider)
     
-    # If model is not configured, use a default that RunPod endpoints recognize
-    # Based on endpoint responses, RunPod often uses: "meta-llama/llama-3.1-8b-instruct"
-    if not model or model.strip() == "":
+    # Priority: LLM_MODEL (env) -> Provider-specific env -> config.yaml
+    model = (
+        os.getenv("LLM_MODEL") or
+        os.getenv(f"{provider.upper()}_MODEL") or
+        config.get("model")
+    )
+    
+    if not model:
+        # Defaults based on provider
+        if provider == "runpod":
+            return "meta-llama/llama-3.1-8b-instruct"
+        elif provider == "groq":
+            return "llama-3-70b-8192"
         return "meta-llama/llama-3.1-8b-instruct"
+        
     return model
 

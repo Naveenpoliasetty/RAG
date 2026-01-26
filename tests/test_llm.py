@@ -9,13 +9,13 @@ import time
 from pathlib import Path
 
 # Add src to path
-sys.path.insert(0, str(Path(__file__).parent))
+sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from openai import OpenAI
 import instructor
 from pydantic import BaseModel
 from typing import List
-from src.utils.llm_client import get_openai_client, get_llm_model, load_llm_config
+from src.utils.llm_client import get_openai_client, get_llm_model, get_provider_config, get_current_provider
 from src.utils.logger import get_logger
 
 logger = get_logger("LLMTest")
@@ -34,9 +34,9 @@ def test_endpoint_connectivity():
     
     try:
         import requests
-        from src.utils.llm_client import load_llm_config
+        from src.utils.llm_client import get_provider_config
         
-        config = load_llm_config()
+        config = get_provider_config()
         base_url = config.get("base_url")
         
         if not base_url:
@@ -230,7 +230,7 @@ def test_config_loading():
     print_section("Test 0: Configuration Check")
     
     try:
-        config = load_llm_config()
+        config = get_provider_config()
         model = get_llm_model()
         
         print("Configuration loaded successfully:")
@@ -256,8 +256,9 @@ def test_config_loading():
 
 def main():
     """Run all tests"""
+    provider = get_current_provider().upper()
     print("\n" + "🚀" * 35)
-    print("  RunPod vLLM Server Inference Test")
+    print(f"  {provider} Inference Test")
     print("🚀" * 35)
     
     results = []
