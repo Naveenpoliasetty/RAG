@@ -5,6 +5,7 @@ from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_TAB_ALIGNMENT
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 import os
+from datetime import datetime
 
 
 # ------------------------------------------------------------
@@ -174,7 +175,8 @@ def create_resume(resume_data: dict) -> str:
     # SAVE FILE
     # --------------------------------------------------------
 
-    filename = f"{resume_data['name'].replace(' ', '_')}_Resume.docx"
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    filename = f"{resume_data['name'].replace(' ', '_')}_Resume_{timestamp}.docx"
     doc.save(filename)
 
     return filename
@@ -206,4 +208,4 @@ def generate_and_upload_resume(resume_data):
         file_path=local_file,
         destination_blob_name=os.path.basename(local_file)
     )
-    return {"gcs_url": gcs_url}
+    return {"gcs_url": gcs_url, "local_file": local_file}
