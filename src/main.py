@@ -148,6 +148,12 @@ async def generate_resume_endpoint(
         final_result = update_resume_sections(resume_dict, result)
         urls = generate_and_upload_resume(final_result)
 
+        # Cleanup the generated local file
+        if "local_file" in urls:
+            local_resume_file = urls["local_file"]
+            if os.path.exists(local_resume_file):
+                os.remove(local_resume_file)
+                logger.info(f"Cleaned up generated resume file: {local_resume_file}")
 
         return JSONResponse(content=urls)
 

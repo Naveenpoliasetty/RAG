@@ -80,9 +80,9 @@ class ResumeChatService:
                 os.remove(local_path)
                 logger.info(f"Cleaned up temporary file: {local_path}")
             
-            # Also cleanup the generated docx which is created by create_resume in current dir
-            if updated_resume:
-                generated_docx = f"{updated_resume.name.replace(' ', '_')}_Resume.docx"
+            # Use the local_file returned by generate_and_upload_resume for cleanup
+            if result and "local_file" in result:
+                generated_docx = result["local_file"]
                 if os.path.exists(generated_docx):
                     os.remove(generated_docx)
                     logger.info(f"Cleaned up generated file: {generated_docx}")
