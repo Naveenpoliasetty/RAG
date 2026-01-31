@@ -8,7 +8,7 @@ from contextlib import asynccontextmanager
 from typing import List
 import json
 
-from src.api import parser_resume
+from src.api import parser_resume, resume_chat
 from src.api.parser_resume import parse_resume, router
 from src.api.get_unique_job_roles import get_unique_job_roles
 from src.core.config import settings
@@ -76,6 +76,7 @@ app.add_middleware(
 
 
 app.include_router(parser_resume.router, prefix="/api/v1", tags=["Parser Resume"])
+app.include_router(resume_chat.router, prefix="/api/v1", tags=["Resume Chat Editor"])
 
 # -----------------------------
 # Endpoints
