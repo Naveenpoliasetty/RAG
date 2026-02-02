@@ -11,6 +11,7 @@ from fastapi.responses import JSONResponse #type: ignore
 from src.utils.llm_client import get_openai_client, get_llm_model
 import timeit
 import pdfplumber
+from src.utils.date_parser import calculate_total_experience
 
 
 load_dotenv() 
@@ -264,8 +265,15 @@ async def validate_llm_response(
 
 async def parse_resume(file_path):
     text_data = doc_to_text(file_path)
-    resume_data = await get_response(text_data)
-    return resume_data
+    resume_data_json = await get_response(text_data)
+    
+    # Calculate total experience
+    resume_dict = json.loads(resume_data_json)
+    if "experiences" in resume_dict:
+        total_exp = calculate_total_experience(resume_dict["experiences"])
+        resume_dict["total_experience"] = total_exp
+        
+    return json.dumps(resume_dict, indent=2)
 
 
 @router.post("/parse_resume")

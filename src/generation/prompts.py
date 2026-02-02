@@ -54,6 +54,7 @@ CRITICAL RULES:
 - Focus on key achievements, skills, and quantifiable results
 - Ensure ATS-friendly language with relevant keywords
 - Include as much relevant detail as possible from the source data
+- **EXPERIENCE LEVEL ENFORCEMENT**: Look for `CANDIDATE_TOTAL_EXPERIENCE` in the job description. If present, you MUST use this specific value (e.g., "11+ years", "5 years") when mentioning the total experience in the professional summary. DO NOT hallucinate or guess this number.
 
 JOB TITLE EXTRACTION:
 - Identify the primary job title from the job description (e.g., "Senior Software Engineer", "Data Scientist", "Product Manager")

@@ -125,9 +125,13 @@ async def generate_resume_endpoint(
         except Exception as e:
             return JSONResponse({"error": f"Invalid related_jobs JSON: {e}"}, 400)
 
+        # Prepare job description with candidate experience info
+        total_exp = resume_dict.get("total_experience", "N/A")
+        enriched_jd = f"CANDIDATE_TOTAL_EXPERIENCE: {total_exp}\n\nJOB_DESCRIPTION_START\n{job_description}\nJOB_DESCRIPTION_END"
+
         # Generate resume
         result = await orchestrate_resume_generation_individual_experiences(
-            job_description=job_description,
+            job_description=enriched_jd,
             job_roles=parsed_related_jobs,
             num_experiences=experience_count,
             semantic_weight=semantic_weight,
