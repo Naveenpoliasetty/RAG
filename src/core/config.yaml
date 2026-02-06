@@ -4,6 +4,12 @@ app:
   log_level: "INFO"
   max_workers: 4
 
+# Clerk Configuration
+clerk:
+  webhook_secret: ""  # Set via CLERK_WEBHOOK_SECRET environment variable
+  secret_key: ""  # Set via CLERK_SECRET_KEY environment variable (for token verification)
+  publishable_key: ""  # Set via CLERK_PUBLISHABLE_KEY environment variable (optional)
+
 # MongoDB Configuration
 mongodb:
   uri: "mongodb+srv://naveenpoliasetty:Naveen221003@cluster0.8jniohl.mongodb.net/?appName=Cluster0"
