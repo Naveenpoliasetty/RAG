@@ -8,17 +8,18 @@ from contextlib import asynccontextmanager
 from typing import List
 import json
 
-from src.api import parser_resume, resume_chat
+from src.api import parser_resume, resume_chat, webhook, user_resumes
 from src.api.parser_resume import parse_resume, router
 from src.api.get_unique_job_roles import get_unique_job_roles
 from src.core.config import settings
 from src.core.db_manager import get_qdrant_manager, get_mongodb_manager
 from src.generation.resume_generator import orchestrate_resume_generation_individual_experiences
 from src.utils.logger import get_logger
-
+from src.middleware.auth import get_current_user
 from src.generation.resume_writer import generate_and_upload_resume
-
 from src.utils.resume_updater import update_resume_sections
+from datetime import datetime, timezone
+from uuid import uuid4
 logger = get_logger(__name__)
 
 
@@ -77,6 +78,8 @@ app.add_middleware(
 
 app.include_router(parser_resume.router, prefix="/api/v1", tags=["Parser Resume"])
 app.include_router(resume_chat.router, prefix="/api/v1", tags=["Resume Chat Editor"])
+app.include_router(webhook.router, prefix="/api/v1", tags=["Webhooks"])
+app.include_router(user_resumes.router, prefix="/api/v1", tags=["User Resumes"])
 
 # -----------------------------
 # Endpoints
@@ -97,6 +100,7 @@ async def generate_resume_endpoint(
     related_jobs: str = Form(...),
     qdrant_manager=Depends(get_qdrant),
     mongodb_manager=Depends(get_mongodb),
+    current_user=Depends(get_current_user),
     semantic_weight: float = Form(0.7),
     keyword_weight: float = Form(0.3)
 ):
@@ -147,6 +151,30 @@ async def generate_resume_endpoint(
 
         final_result = update_resume_sections(resume_dict, result)
         urls = generate_and_upload_resume(final_result)
+
+        # Save resume to MongoDB with user_id
+        try:
+            resume_doc = {
+                "resume_id": str(uuid4()),
+                "user_id": current_user.get("_id") or current_user.get("clerk_id"),
+                "clerk_id": current_user.get("clerk_id"),
+                "job_description": job_description,
+                "related_jobs": parsed_related_jobs,
+                "resume_data": final_result,
+                "gcs_url": urls.get("gcs_url"),
+                "local_file": urls.get("local_file"),
+                "created_at": datetime.now(timezone.utc),
+                "updated_at": datetime.now(timezone.utc),
+                "status": "generated"
+            }
+            
+            resumes_collection = mongodb_manager.db["user_resumes"]
+            insert_result = resumes_collection.insert_one(resume_doc)
+            logger.info(f"Saved resume to MongoDB: resume_id={resume_doc['resume_id']}, user_id={resume_doc['user_id']}")
+            
+        except Exception as e:
+            logger.error(f"Error saving resume to MongoDB: {e}")
+            # Don't fail the request if saving fails, just log it
 
         # Cleanup the generated local file
         if "local_file" in urls:
